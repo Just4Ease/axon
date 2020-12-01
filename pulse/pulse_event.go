@@ -1,7 +1,7 @@
 package pulse
 
 import (
-	"axon"
+	"github.com/Just4Ease/axon"
 )
 
 type event struct {

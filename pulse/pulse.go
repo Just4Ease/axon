@@ -1,12 +1,12 @@
 package pulse
 
 import (
-	"axon"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Just4Ease/axon"
 	"github.com/apache/pulsar-client-go/pulsar"
 	"io/ioutil"
 	"log"
@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,6 +22,76 @@ type pulsarStore struct {
 	serviceName string
 	client      axon.Client
 	opts        axon.Options
+}
+
+func (s *pulsarStore) Reply(topic string, handler axon.ReplyHandler) error {
+
+	// Execute Handler
+	handlerPayload, handlerError := handler()
+	replyPayload := axon.NewReply(handlerPayload, handlerError)
+	data, err := replyPayload.Compact()
+	if err != nil {
+		return fmt.Errorf("unable to connect compact reply to be sent to topic with provided configuration. failed with error: %v", err)
+	}
+
+	return s.Publish(topic, data)
+}
+
+func (s *pulsarStore) Request(r string, message []byte, v interface{}) error {
+	req := axon.NewRequestPayload(r, message)
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	errChan := make(chan error)
+	eventChan := make(chan axon.Event)
+
+	go func(wg *sync.WaitGroup, errChan chan error, eventChan chan axon.Event) {
+		defer wg.Done()
+		if err := s.Subscribe(req.GetReplyAddress(), func(event axon.Event) {
+			eventChan <- event
+			return
+		}); err != nil {
+			log.Printf("failed to receive response from: %s with the following errors: %v", r, err)
+			errChan <- err
+			return
+		}
+	}(wg, errChan, eventChan)
+
+	data, err := req.Compact()
+	if err != nil {
+		log.Printf("failed to compact request of: %s for transfer with the following errors: %v", r, err)
+		return err
+	}
+
+	if err := s.Publish(r, data); err != nil {
+		log.Printf("failed to send request for: %s with the following errors: %v", r, err)
+		return err
+	}
+	wg.Wait()
+	// Read address from
+
+	for {
+		select {
+		case err := <-errChan:
+			return err
+
+		case event := <-eventChan:
+			// This is the ReplyPayload
+			var reply axon.ReplyPayload
+			if err := json.Unmarshal(event.Data(), &reply); err != nil {
+				return err
+			}
+
+			// Check if reply has an issue.
+			if replyErr := reply.GetError(); replyErr != nil {
+				return replyErr
+			}
+
+			// Unpack Reply's payload.
+			if err := json.Unmarshal(reply.GetPayload(), v); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // Note: If you need a more controlled init func, write your pulsar lib to implement the EventStore interface.

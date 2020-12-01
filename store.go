@@ -9,6 +9,7 @@ import (
 )
 
 type SubscriptionHandler func(event Event)
+type ReplyHandler func() ([]byte, error)
 type EventHandler func() error
 
 var (
@@ -21,6 +22,8 @@ var (
 type EventStore interface {
 	Publish(topic string, message []byte) error
 	Subscribe(topic string, handler SubscriptionHandler) error
+	Request(requestURI string, payload []byte, v interface{}) error
+	Reply(topic string, handler ReplyHandler) error
 	GetServiceName() string
 	Run(ctx context.Context, handlers ...EventHandler)
 }

@@ -1,8 +1,8 @@
 package pulse
 
 import (
-	"axon"
 	"context"
+	"github.com/Just4Ease/axon"
 	"github.com/apache/pulsar-client-go/pulsar"
 	"time"
 )
