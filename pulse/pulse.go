@@ -1,6 +1,7 @@
 package pulse
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -25,45 +26,87 @@ type pulsarStore struct {
 }
 
 func (s *pulsarStore) Reply(topic string, handler axon.ReplyHandler) error {
-
-	// Execute Handler
-	handlerPayload, handlerError := handler()
-	replyPayload := axon.NewReply(handlerPayload, handlerError)
-	data, err := replyPayload.Compact()
-	if err != nil {
-		return fmt.Errorf("unable to connect compact reply to be sent to topic with provided configuration. failed with error: %v", err)
+	serviceName := s.GetServiceName()
+	var consumer axon.Consumer
+	var err error
+	if consumer, err = s.client.Subscribe(pulsar.ConsumerOptions{
+		Topic:                       topic,
+		AutoDiscoveryPeriod:         0,
+		SubscriptionName:            fmt.Sprintf("%s-%s", serviceName, topic),
+		Type:                        pulsar.Shared,
+		SubscriptionInitialPosition: pulsar.SubscriptionPositionLatest,
+		Name:                        serviceName,
+	}); err != nil {
+		return fmt.Errorf("error subscribing to topic. %v", err)
 	}
 
-	return s.Publish(topic, data)
+	defer consumer.Close()
+	for {
+		message, err := consumer.Recv(context.Background())
+		if err != nil {
+			if err == axon.ErrCloseConn {
+				break
+			}
+			continue
+		}
+
+		event := NewEvent(message, consumer)
+		go func(event axon.Event) {
+
+			var reqPl axon.RequestPayload
+			decoder := json.NewDecoder(bytes.NewBuffer(event.Data()))
+			decoder.UseNumber()
+			if err := decoder.Decode(&reqPl); err != nil {
+				log.Print("failed to decode incoming request payload []bytes with the following error: ", err)
+				return
+			}
+
+			// Execute Handler
+			handlerPayload, handlerError := handler(reqPl)
+			replyPayload := axon.NewReply(handlerPayload, handlerError)
+			data, err := replyPayload.Compact()
+			if err != nil {
+				log.Print("failed to encode reply payload into []bytes with the following error: ", err)
+				return
+			}
+
+			if err := s.Publish(reqPl.GetReplyAddress(), data); err != nil {
+				log.Print("failed to reply data to the incoming request with the following error: ", err)
+				return
+			}
+
+			event.Ack()
+		}(event)
+	}
+	return nil
 }
 
-func (s *pulsarStore) Request(r string, message []byte, v interface{}) error {
-	req := axon.NewRequestPayload(r, message)
+func (s *pulsarStore) Request(topic string, message []byte, v interface{}) error {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	errChan := make(chan error)
 	eventChan := make(chan axon.Event)
-
-	go func(wg *sync.WaitGroup, errChan chan error, eventChan chan axon.Event) {
+	req := axon.NewRequestPayload(topic, message)
+	go func(wg *sync.WaitGroup, errChan chan error, eventChan chan axon.Event, replyAddress string) {
 		defer wg.Done()
-		if err := s.Subscribe(req.GetReplyAddress(), func(event axon.Event) {
+		if err := s.Subscribe(replyAddress, func(event axon.Event) {
 			eventChan <- event
 			return
 		}); err != nil {
-			log.Printf("failed to receive response from: %s with the following errors: %v", r, err)
+			log.Printf("failed to receive response from: %s with the following errors: %v", topic, err)
 			errChan <- err
 			return
 		}
-	}(wg, errChan, eventChan)
+	}(wg, errChan, eventChan, req.GetReplyAddress())
 
 	data, err := req.Compact()
 	if err != nil {
-		log.Printf("failed to compact request of: %s for transfer with the following errors: %v", r, err)
+		log.Printf("failed to compact request of: %s for transfer with the following errors: %v", topic, err)
 		return err
 	}
 
-	if err := s.Publish(r, data); err != nil {
-		log.Printf("failed to send request for: %s with the following errors: %v", r, err)
+	if err := s.Publish(topic, data); err != nil {
+		log.Printf("failed to send request for: %s with the following errors: %v", topic, err)
 		return err
 	}
 	wg.Wait()
@@ -92,6 +135,37 @@ func (s *pulsarStore) Request(r string, message []byte, v interface{}) error {
 			}
 		}
 	}
+}
+
+// Manually put the fqdn of your topics.
+func (s *pulsarStore) Subscribe(topic string, handler axon.SubscriptionHandler) error {
+	serviceName := s.GetServiceName()
+	consumer, err := s.client.Subscribe(pulsar.ConsumerOptions{
+		Topic:                       topic,
+		AutoDiscoveryPeriod:         0,
+		SubscriptionName:            fmt.Sprintf("%s-%s", serviceName, topic),
+		Type:                        pulsar.Shared,
+		SubscriptionInitialPosition: pulsar.SubscriptionPositionLatest,
+		Name:                        serviceName,
+	})
+	if err != nil {
+		return fmt.Errorf("error subscribing to topic. %v", err)
+	}
+
+	defer consumer.Close()
+	for {
+		message, err := consumer.Recv(context.Background())
+		if err == axon.ErrCloseConn {
+			break
+		}
+		if err != nil {
+			continue
+		}
+
+		event := NewEvent(message, consumer)
+		go handler(event)
+	}
+	return nil
 }
 
 // Note: If you need a more controlled init func, write your pulsar lib to implement the EventStore interface.
@@ -154,37 +228,6 @@ func (s *pulsarStore) Publish(topic string, message []byte) error {
 	}
 
 	log.Printf("Published message to %s id ==>> %s", topic, byteToHex(id.Serialize()))
-	return nil
-}
-
-// Manually put the fqdn of your topics.
-func (s *pulsarStore) Subscribe(topic string, handler axon.SubscriptionHandler) error {
-	serviceName := s.GetServiceName()
-	consumer, err := s.client.Subscribe(pulsar.ConsumerOptions{
-		Topic:                       topic,
-		AutoDiscoveryPeriod:         0,
-		SubscriptionName:            fmt.Sprintf("%s-%s", serviceName, topic),
-		Type:                        pulsar.Shared,
-		SubscriptionInitialPosition: pulsar.SubscriptionPositionLatest,
-		Name:                        serviceName,
-	})
-	if err != nil {
-		return fmt.Errorf("error subscribing to topic. %v", err)
-	}
-
-	defer consumer.Close()
-	for {
-		message, err := consumer.Recv(context.Background())
-		if err == axon.ErrCloseConn {
-			break
-		}
-		if err != nil {
-			continue
-		}
-
-		event := NewEvent(message, consumer)
-		go handler(event)
-	}
 	return nil
 }
 
