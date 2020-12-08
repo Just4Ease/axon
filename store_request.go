@@ -11,7 +11,7 @@ type RequestPayload struct {
 }
 
 func NewRequestPayload(topic string, message []byte) *RequestPayload {
-	replyPipe := fmt.Sprintf("%s__%s", topic, GenerateRandomString()) // TODO: Generate Randomness for reply pipe.
+	replyPipe := fmt.Sprintf("%s::%s", topic, GenerateRandomString()) // TODO: Generate Randomness for reply pipe.
 	return &RequestPayload{
 		replyPipe: replyPipe,
 		payload:   message,
@@ -31,5 +31,5 @@ func (r *RequestPayload) ParsePayload(v interface{}) error {
 }
 
 func (r *RequestPayload) Compact() ([]byte, error) {
-	return json.Marshal(*r)
+	return json.Marshal(r)
 }

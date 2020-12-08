@@ -15,7 +15,7 @@ func NewReply(payload []byte, err error) *ReplyPayload {
 }
 
 func (r *ReplyPayload) Compact() ([]byte, error) {
-	return json.Marshal(*r)
+	return json.Marshal(r)
 }
 
 func (r *ReplyPayload) GetError() error {
