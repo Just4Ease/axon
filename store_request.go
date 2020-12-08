@@ -6,28 +6,28 @@ import (
 )
 
 type RequestPayload struct {
-	replyPipe string
-	payload   []byte
+	ReplyPipe string `json:"reply_pipe"`
+	Payload   []byte `json:"payload"`
 }
 
 func NewRequestPayload(topic string, message []byte) *RequestPayload {
 	replyPipe := fmt.Sprintf("%s::%s", topic, GenerateRandomString()) // TODO: Generate Randomness for reply pipe.
 	return &RequestPayload{
-		replyPipe: replyPipe,
-		payload:   message,
+		ReplyPipe: replyPipe,
+		Payload:   message,
 	}
 }
 
 func (r *RequestPayload) GetReplyAddress() string {
-	return r.replyPipe
+	return r.ReplyPipe
 }
 
 func (r *RequestPayload) GetPayload() []byte {
-	return r.payload
+	return r.Payload
 }
 
 func (r *RequestPayload) ParsePayload(v interface{}) error {
-	return json.Unmarshal(r.payload, v) // Change to ioutils.readAll not json buffer thingy.
+	return json.Unmarshal(r.Payload, v) // Change to ioutils.readAll not json buffer thingy.
 }
 
 func (r *RequestPayload) Compact() ([]byte, error) {

@@ -3,14 +3,14 @@ package axon
 import "encoding/json"
 
 type ReplyPayload struct {
-	err     error
-	payload []byte
+	Err     error `json:"err"`
+	Payload []byte `json:"payload"`
 }
 
 func NewReply(payload []byte, err error) *ReplyPayload {
 	return &ReplyPayload{
-		payload: payload,
-		err:     err,
+		Payload: payload,
+		Err:     err,
 	}
 }
 
@@ -19,9 +19,9 @@ func (r *ReplyPayload) Compact() ([]byte, error) {
 }
 
 func (r *ReplyPayload) GetError() error {
-	return r.err
+	return r.Err
 }
 
 func (r *ReplyPayload) GetPayload() []byte {
-	return r.payload
+	return r.Payload
 }
