@@ -9,9 +9,13 @@ type ReplyPayload struct {
 }
 
 func NewReply(payload []byte, err error) *ReplyPayload {
+	s := ""
+	if err != nil {
+		s = errors.WithStack(err).Error()
+	}
 	return &ReplyPayload{
 		Payload:      payload,
-		ErrorMessage: errors.WithStack(err).Error(),
+		ErrorMessage: s,
 	}
 }
 
