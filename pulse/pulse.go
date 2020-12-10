@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -52,7 +51,6 @@ func (s *pulsarStore) Reply(topic string, handler axon.ReplyHandler) error {
 
 		event := NewEvent(message, consumer)
 		go func(event axon.Event) {
-
 			var reqPl axon.RequestPayload
 			decoder := json.NewDecoder(bytes.NewBuffer(event.Data()))
 			decoder.UseNumber()
@@ -60,7 +58,6 @@ func (s *pulsarStore) Reply(topic string, handler axon.ReplyHandler) error {
 				log.Print("failed to decode incoming request payload []bytes with the following error: ", err)
 				return
 			}
-
 			// Execute Handler
 			handlerPayload, handlerError := handler(reqPl)
 			replyPayload := axon.NewReply(handlerPayload, handlerError)
@@ -82,22 +79,45 @@ func (s *pulsarStore) Reply(topic string, handler axon.ReplyHandler) error {
 }
 
 func (s *pulsarStore) Request(topic string, message []byte, v interface{}) error {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	errChan := make(chan error)
-	eventChan := make(chan axon.Event)
+	errChan := make(chan error, 1)
+	eventChan := make(chan axon.Event, 1)
 	req := axon.NewRequestPayload(topic, message)
-	go func(wg *sync.WaitGroup, errChan chan error, eventChan chan axon.Event, replyAddress string) {
-		defer wg.Done()
-		if err := s.Subscribe(replyAddress, func(event axon.Event) {
-			eventChan <- event
-			return
-		}); err != nil {
-			log.Printf("failed to receive response from: %s with the following errors: %v", topic, err)
-			errChan <- err
+	go func(errChan chan<- error, eventChan chan<- axon.Event, replyAddress string) {
+		serviceName := s.GetServiceName()
+		consumer, err := s.client.Subscribe(pulsar.ConsumerOptions{
+			Topic:                       replyAddress,
+			AutoDiscoveryPeriod:         0,
+			SubscriptionName:            fmt.Sprintf("%s-%s", serviceName, topic),
+			Type:                        pulsar.Shared,
+			SubscriptionInitialPosition: pulsar.SubscriptionPositionLatest,
+			Name:                        serviceName,
+		})
+
+		if err != nil {
+			errChan <- fmt.Errorf("error subscribing to topic. %v", err)
 			return
 		}
-	}(wg, errChan, eventChan, req.GetReplyAddress())
+
+		defer consumer.Close()
+
+		for {
+			message, err := consumer.Recv(context.Background())
+			if err == axon.ErrCloseConn {
+				errChan <- axon.ErrCloseConn
+				break
+			}
+			if err != nil {
+				errChan <- err
+				break
+			}
+
+			if message != nil {
+				event := NewEvent(message, consumer)
+				eventChan <- event
+				break
+			}
+		}
+	}(errChan, eventChan, req.GetReplyAddress())
 
 	data, err := req.Compact()
 	if err != nil {
@@ -109,29 +129,34 @@ func (s *pulsarStore) Request(topic string, message []byte, v interface{}) error
 		log.Printf("failed to send request for: %s with the following errors: %v", topic, err)
 		return err
 	}
-	wg.Wait()
 	// Read address from
-
 	for {
 		select {
-		case err := <-errChan:
-			return err
-
+		case err, ok := <-errChan:
+			if ok {
+				return err
+			}
 		case event := <-eventChan:
 			// This is the ReplyPayload
 			var reply axon.ReplyPayload
 			if err := json.Unmarshal(event.Data(), &reply); err != nil {
+				event.Ack()
 				return err
 			}
 
 			// Check if reply has an issue.
 			if replyErr := reply.GetError(); replyErr != nil {
+				event.Ack()
 				return replyErr
 			}
 
 			// Unpack Reply's payload.
 			if err := json.Unmarshal(reply.GetPayload(), v); err != nil {
+				event.Ack()
 				return err
+			} else {
+				event.Ack()
+				return nil
 			}
 		}
 	}

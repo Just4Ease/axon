@@ -6,8 +6,8 @@ import (
 )
 
 type RequestPayload struct {
-	ReplyPipe string `json:"reply_pipe"`
-	Payload   []byte `json:"payload"`
+	ReplyPipe string          `json:"reply_pipe"`
+	Payload   json.RawMessage `json:"payload"`
 }
 
 func NewRequestPayload(topic string, message []byte) *RequestPayload {

@@ -1,16 +1,17 @@
 package axon
 
 import "encoding/json"
+import "github.com/pkg/errors"
 
 type ReplyPayload struct {
-	Err     error `json:"err"`
-	Payload []byte `json:"payload"`
+	ErrorMessage string          `json:"error_message"`
+	Payload      json.RawMessage `json:"payload"`
 }
 
 func NewReply(payload []byte, err error) *ReplyPayload {
 	return &ReplyPayload{
-		Payload: payload,
-		Err:     err,
+		Payload:      payload,
+		ErrorMessage: errors.WithStack(err).Error(),
 	}
 }
 
@@ -19,7 +20,10 @@ func (r *ReplyPayload) Compact() ([]byte, error) {
 }
 
 func (r *ReplyPayload) GetError() error {
-	return r.Err
+	if r.ErrorMessage != "" {
+		return errors.New(r.ErrorMessage)
+	}
+	return nil
 }
 
 func (r *ReplyPayload) GetPayload() []byte {
