@@ -59,7 +59,7 @@ func (s *pulsarStore) Reply(topic string, handler axon.ReplyHandler) error {
 				return
 			}
 			// Execute Handler
-			handlerPayload, handlerError := handler(reqPl)
+			handlerPayload, handlerError := handler(reqPl.GetPayload())
 			replyPayload := axon.NewReply(handlerPayload, handlerError)
 			data, err := replyPayload.Compact()
 			if err != nil {
@@ -79,27 +79,26 @@ func (s *pulsarStore) Reply(topic string, handler axon.ReplyHandler) error {
 }
 
 func (s *pulsarStore) Request(topic string, message []byte, v interface{}) error {
-	errChan := make(chan error, 1)
-	eventChan := make(chan axon.Event, 1)
+	errChan := make(chan error)
+	eventChan := make(chan axon.Event)
 	req := axon.NewRequestPayload(topic, message)
-	go func(errChan chan<- error, eventChan chan<- axon.Event, replyAddress string) {
-		serviceName := s.GetServiceName()
-		consumer, err := s.client.Subscribe(pulsar.ConsumerOptions{
-			Topic:                       replyAddress,
-			AutoDiscoveryPeriod:         0,
-			SubscriptionName:            fmt.Sprintf("%s-%s", serviceName, topic),
-			Type:                        pulsar.Shared,
-			SubscriptionInitialPosition: pulsar.SubscriptionPositionLatest,
-			Name:                        serviceName,
-		})
 
-		if err != nil {
-			errChan <- fmt.Errorf("error subscribing to topic. %v", err)
-			return
-		}
+	serviceName := s.GetServiceName()
+	consumer, err := s.client.Subscribe(pulsar.ConsumerOptions{
+		Topic:                       req.ReplyPipe,
+		AutoDiscoveryPeriod:         0,
+		SubscriptionName:            fmt.Sprintf("%s-%s", serviceName, req.ReplyPipe),
+		Type:                        pulsar.Shared,
+		SubscriptionInitialPosition: pulsar.SubscriptionPositionLatest,
+		Name:                        serviceName,
+	})
+	if err != nil {
+		return err
+	}
 
-		defer consumer.Close()
+	defer consumer.Close()
 
+	go func(errChan chan<- error, eventChan chan<- axon.Event, consumer axon.Consumer) {
 		for {
 			message, err := consumer.Recv(context.Background())
 			if err == axon.ErrCloseConn {
@@ -111,35 +110,38 @@ func (s *pulsarStore) Request(topic string, message []byte, v interface{}) error
 				break
 			}
 
-			if message != nil {
-				event := NewEvent(message, consumer)
-				eventChan <- event
-				break
-			}
+			event := NewEvent(message, consumer)
+			eventChan <- event
+			break
 		}
-	}(errChan, eventChan, req.GetReplyAddress())
+	}(errChan, eventChan, consumer)
 
-	data, err := req.Compact()
-	if err != nil {
-		log.Printf("failed to compact request of: %s for transfer with the following errors: %v", topic, err)
-		return err
-	}
+	go func(errChan chan<- error, payload *axon.RequestPayload, topic string) {
+		data, err := payload.Compact()
+		if err != nil {
+			log.Printf("failed to compact request of: %s for transfer with the following errors: %v", topic, err)
+			errChan <- err
+			return
+		}
 
-	if err := s.Publish(topic, data); err != nil {
-		log.Printf("failed to send request for: %s with the following errors: %v", topic, err)
-		return err
-	}
+		if err := s.Publish(topic, data); err != nil {
+			log.Printf("failed to send request for: %s with the following errors: %v", topic, err)
+			errChan <- err
+		}
+	}(errChan, req, topic)
 	// Read address from
 	for {
 		select {
-		case err, ok := <-errChan:
-			if ok {
-				return err
-			}
-		case event := <-eventChan:
+		case err := <-errChan:
+			log.Print("failed to receive reply-response with the following errors: ", err)
+			return err
+		default:
+			event := <-eventChan
+
 			// This is the ReplyPayload
 			var reply axon.ReplyPayload
 			if err := json.Unmarshal(event.Data(), &reply); err != nil {
+				log.Print("failed to unmarshal reply event into reply struct with the following errors: ", err)
 				event.Ack()
 				return err
 			}
@@ -152,12 +154,13 @@ func (s *pulsarStore) Request(topic string, message []byte, v interface{}) error
 
 			// Unpack Reply's payload.
 			if err := json.Unmarshal(reply.GetPayload(), v); err != nil {
+				log.Print("failed to unmarshal reply payload into struct with the following errors: ", err)
 				event.Ack()
 				return err
-			} else {
-				event.Ack()
-				return nil
 			}
+
+			event.Ack()
+			return nil
 		}
 	}
 }

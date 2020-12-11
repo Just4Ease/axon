@@ -9,7 +9,7 @@ import (
 )
 
 type SubscriptionHandler func(event Event)
-type ReplyHandler func(requestPayload RequestPayload) ([]byte, error)
+type ReplyHandler func(input []byte) ([]byte, error)
 type EventHandler func() error
 
 var (
