@@ -20,13 +20,37 @@ import (
 
 type pulsarStore struct {
 	serviceName string
-	client      axon.Client
-	opts        axon.Options
+	client      Client
+}
+
+type Client interface {
+	CreateProducer(pulsar.ProducerOptions) (Producer, error)
+	Subscribe(pulsar.ConsumerOptions) (Consumer, error)
+	CreateReader(pulsar.ReaderOptions) (pulsar.Reader, error)
+	TopicPartitions(string) ([]string, error)
+	Close()
+}
+
+type Producer interface {
+	Send(context.Context, []byte) (pulsar.MessageID, error)
+	Close()
+}
+
+type Message interface {
+	ID() pulsar.MessageID
+	Payload() []byte
+	Topic() string
+}
+
+type Consumer interface {
+	Recv(ctx context.Context) (Message, error)
+	Ack(pulsar.MessageID)
+	Close()
 }
 
 func (s *pulsarStore) Reply(topic string, handler axon.ReplyHandler) error {
 	serviceName := s.GetServiceName()
-	var consumer axon.Consumer
+	var consumer Consumer
 	var err error
 	if consumer, err = s.client.Subscribe(pulsar.ConsumerOptions{
 		Topic:                       topic,
@@ -98,7 +122,7 @@ func (s *pulsarStore) Request(topic string, message []byte, v interface{}) error
 
 	defer consumer.Close()
 
-	go func(errChan chan<- error, eventChan chan<- axon.Event, consumer axon.Consumer) {
+	go func(errChan chan<- error, eventChan chan<- axon.Event, consumer Consumer) {
 		for {
 			message, err := consumer.Recv(context.Background())
 			if err == axon.ErrCloseConn {
@@ -110,9 +134,11 @@ func (s *pulsarStore) Request(topic string, message []byte, v interface{}) error
 				break
 			}
 
-			event := NewEvent(message, consumer)
-			eventChan <- event
-			break
+			if message != nil {
+				event := NewEvent(message, consumer)
+				eventChan <- event
+				return
+			}
 		}
 	}(errChan, eventChan, consumer)
 
@@ -229,7 +255,7 @@ func Init(opts axon.Options) (axon.EventStore, error) {
 	return &pulsarStore{client: newClientWrapper(p), serviceName: name}, nil
 }
 
-func InitTestEventStore(mockClient axon.Client, serviceName string) (axon.EventStore, error) {
+func InitTestEventStore(mockClient Client, serviceName string) (axon.EventStore, error) {
 	return &pulsarStore{client: mockClient, serviceName: serviceName}, nil
 }
 
@@ -263,12 +289,7 @@ func (s *pulsarStore) Run(ctx context.Context, handlers ...axon.EventHandler) {
 	for _, handler := range handlers {
 		go handler.Run()
 	}
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		}
-	}
+	<-ctx.Done()
 }
 
 func byteToHex(b []byte) string {

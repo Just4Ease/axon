@@ -82,7 +82,6 @@ func TestStore_Subscribe(t *testing.T) {
 
 			t.Logf("Received data: %s on topic: %s \n", string(data), eventTopic)
 			event.Ack() // Acknowledge event.
-			return
 		}); err != nil {
 			t.Errorf("Failed to subscribe to topic: %s, with the following error: %v \n", topic, err)
 			return
@@ -109,7 +108,7 @@ func TestPulsarStore_Run(t *testing.T) {
 		t.Log("second function ")
 		return nil
 	})
-	interval := time.Now().Sub(now)
+	interval := time.Since(now)
 	if interval.Seconds() < 3 {
 		t.Fail()
 	}

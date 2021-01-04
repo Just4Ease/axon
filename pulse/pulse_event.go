@@ -5,11 +5,11 @@ import (
 )
 
 type event struct {
-	raw      axon.Message
-	consumer axon.Consumer
+	raw      Message
+	consumer Consumer
 }
 
-func NewEvent(message axon.Message, consumer axon.Consumer) axon.Event {
+func NewEvent(message Message, consumer Consumer) axon.Event {
 	return &event{raw: message, consumer: consumer}
 }
 

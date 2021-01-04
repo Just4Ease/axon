@@ -2,7 +2,6 @@ package pulse
 
 import (
 	"context"
-	"github.com/Just4Ease/axon"
 	"github.com/apache/pulsar-client-go/pulsar"
 	"time"
 )
@@ -25,7 +24,7 @@ type consumerWrapper struct {
 	consumer pulsar.Consumer
 }
 
-func (c *consumerWrapper) Recv(ctx context.Context) (axon.Message, error) {
+func (c *consumerWrapper) Recv(ctx context.Context) (Message, error) {
 	return c.consumer.Receive(ctx)
 }
 
@@ -41,11 +40,11 @@ type clientWrapper struct {
 	client pulsar.Client
 }
 
-func newClientWrapper(p pulsar.Client) axon.Client {
+func newClientWrapper(p pulsar.Client) Client {
 	return &clientWrapper{client: p}
 }
 
-func (c *clientWrapper) CreateProducer(opt pulsar.ProducerOptions) (axon.Producer, error) {
+func (c *clientWrapper) CreateProducer(opt pulsar.ProducerOptions) (Producer, error) {
 	p, err := c.client.CreateProducer(opt)
 	if err != nil {
 		return nil, err
@@ -53,7 +52,7 @@ func (c *clientWrapper) CreateProducer(opt pulsar.ProducerOptions) (axon.Produce
 	return &producerWrapper{producer: p}, nil
 }
 
-func (c *clientWrapper) Subscribe(opt pulsar.ConsumerOptions) (axon.Consumer, error) {
+func (c *clientWrapper) Subscribe(opt pulsar.ConsumerOptions) (Consumer, error) {
 	consumer, err := c.client.Subscribe(opt)
 	if err != nil {
 		return nil, err

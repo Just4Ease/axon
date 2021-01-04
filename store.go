@@ -2,7 +2,6 @@ package axon
 
 import (
 	"context"
-	"github.com/apache/pulsar-client-go/pulsar"
 	"github.com/pkg/errors"
 	"log"
 	"time"
@@ -28,30 +27,7 @@ type EventStore interface {
 	Run(ctx context.Context, handlers ...EventHandler)
 }
 
-type Message interface {
-	ID() pulsar.MessageID
-	Payload() []byte
-	Topic() string
-}
 
-type Consumer interface {
-	Recv(ctx context.Context) (Message, error)
-	Ack(pulsar.MessageID)
-	Close()
-}
-
-type Producer interface {
-	Send(context.Context, []byte) (pulsar.MessageID, error)
-	Close()
-}
-
-type Client interface {
-	CreateProducer(pulsar.ProducerOptions) (Producer, error)
-	Subscribe(pulsar.ConsumerOptions) (Consumer, error)
-	CreateReader(pulsar.ReaderOptions) (pulsar.Reader, error)
-	TopicPartitions(string) ([]string, error)
-	Close()
-}
 
 func (f EventHandler) Run() {
 	for {
