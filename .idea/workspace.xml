@@ -3,14 +3,8 @@
   <component name="ChangeListManager">
     <list default="true" id="2b0662a8-f49f-4ab1-84af-4187eaa3a3e5" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Makefile" beforeDir="false" afterPath="$PROJECT_DIR$/Makefile" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pulse/pulsar_wrapper.go" beforeDir="false" afterPath="$PROJECT_DIR$/pulse/pulsar_wrapper.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pulse/pulse.go" beforeDir="false" afterPath="$PROJECT_DIR$/pulse/pulse.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pulse/pulse_event.go" beforeDir="false" afterPath="$PROJECT_DIR$/pulse/pulse_event.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pulse/pulse_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/pulse/pulse_test.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/store.go" beforeDir="false" afterPath="$PROJECT_DIR$/store.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/stand/stand.go" beforeDir="false" afterPath="$PROJECT_DIR$/stand/stand.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -50,6 +44,22 @@
       <recent name="$PROJECT_DIR$" />
     </key>
   </component>
+  <component name="RunManager">
+    <configuration name="go build github.com/Just4Ease/axon/_lab" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true" nameIsGenerated="true">
+      <module name="axon" />
+      <working_directory value="$PROJECT_DIR$" />
+      <kind value="PACKAGE" />
+      <filePath value="$PROJECT_DIR$/_lab/example.go" />
+      <package value="github.com/Just4Ease/axon/_lab" />
+      <directory value="$PROJECT_DIR$" />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Go Build.go build github.com/Just4Ease/axon/_lab" />
+      </list>
+    </recent_temporary>
+  </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
     <task active="true" id="Default" summary="Default task">
@@ -72,6 +82,22 @@
       <screen x="-1920" y="-93" width="1920" height="1200" />
     </state>
     <state x="-1496" y="180" key="#com.intellij.execution.impl.EditConfigurationsDialog/0.0.1680.1050/-1920.-93.1920.1200@-1920.-93.1920.1200" timestamp="1605467122107" />
+    <state width="1878" height="333" key="GridCell.Tab.0.bottom" timestamp="1609724542669">
+      <screen x="0" y="0" width="1920" height="1200" />
+    </state>
+    <state width="1878" height="333" key="GridCell.Tab.0.bottom/0.0.1920.1200@0.0.1920.1200" timestamp="1609724542669" />
+    <state width="1878" height="333" key="GridCell.Tab.0.center" timestamp="1609724542667">
+      <screen x="0" y="0" width="1920" height="1200" />
+    </state>
+    <state width="1878" height="333" key="GridCell.Tab.0.center/0.0.1920.1200@0.0.1920.1200" timestamp="1609724542667" />
+    <state width="1878" height="333" key="GridCell.Tab.0.left" timestamp="1609724542667">
+      <screen x="0" y="0" width="1920" height="1200" />
+    </state>
+    <state width="1878" height="333" key="GridCell.Tab.0.left/0.0.1920.1200@0.0.1920.1200" timestamp="1609724542667" />
+    <state width="1878" height="333" key="GridCell.Tab.0.right" timestamp="1609724542668">
+      <screen x="0" y="0" width="1920" height="1200" />
+    </state>
+    <state width="1878" height="333" key="GridCell.Tab.0.right/0.0.1920.1200@0.0.1920.1200" timestamp="1609724542668" />
     <state x="410" y="219" key="SettingsEditor" timestamp="1605648889739">
       <screen x="0" y="0" width="1680" height="1050" />
     </state>
