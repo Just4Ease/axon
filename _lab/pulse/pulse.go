@@ -1,13 +1,12 @@
 package pulse
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/Just4Ease/axon"
+	"github.com/Just4Ease/axon/codec"
 	"github.com/apache/pulsar-client-go/pulsar"
 	"io/ioutil"
 	"log"
@@ -21,6 +20,7 @@ import (
 type pulsarStore struct {
 	serviceName string
 	client      Client
+	codec.Marshaler
 }
 
 type Client interface {
@@ -73,19 +73,22 @@ func (s *pulsarStore) Reply(topic string, handler axon.ReplyHandler) error {
 			continue
 		}
 
+		//json.Encoder{}
+
 		event := NewEvent(message, consumer)
 		go func(event axon.Event) {
+			//json.Marshal()
 			var reqPl axon.RequestPayload
-			decoder := json.NewDecoder(bytes.NewBuffer(event.Data()))
-			decoder.UseNumber()
-			if err := decoder.Decode(&reqPl); err != nil {
+			//decoder := s.Marshal(bytes.NewBuffer(event.Data()))
+			//decoder.UseNumber()
+			if err := s.Unmarshal(event.Data(), &reqPl); err != nil {
 				log.Print("failed to decode incoming request payload []bytes with the following error: ", err)
 				return
 			}
 			// Execute Handler
 			handlerPayload, handlerError := handler(reqPl.GetPayload())
 			replyPayload := axon.NewReply(handlerPayload, handlerError)
-			data, err := replyPayload.Compact()
+			data, err := s.Marshal(replyPayload)
 			if err != nil {
 				log.Print("failed to encode reply payload into []bytes with the following error: ", err)
 				return
@@ -143,7 +146,7 @@ func (s *pulsarStore) Request(topic string, message []byte, v interface{}) error
 	}(errChan, eventChan, consumer)
 
 	go func(errChan chan<- error, payload *axon.RequestPayload, topic string) {
-		data, err := payload.Compact()
+		data, err := s.Marshal(payload)
 		if err != nil {
 			log.Printf("failed to compact request of: %s for transfer with the following errors: %v", topic, err)
 			errChan <- err
@@ -166,7 +169,7 @@ func (s *pulsarStore) Request(topic string, message []byte, v interface{}) error
 
 			// This is the ReplyPayload
 			var reply axon.ReplyPayload
-			if err := json.Unmarshal(event.Data(), &reply); err != nil {
+			if err := s.Unmarshal(event.Data(), &reply); err != nil {
 				log.Print("failed to unmarshal reply event into reply struct with the following errors: ", err)
 				event.Ack()
 				return err
@@ -179,7 +182,7 @@ func (s *pulsarStore) Request(topic string, message []byte, v interface{}) error
 			}
 
 			// Unpack Reply's payload.
-			if err := json.Unmarshal(reply.GetPayload(), v); err != nil {
+			if err := s.Unmarshal(reply.GetPayload(), v); err != nil {
 				log.Print("failed to unmarshal reply payload into struct with the following errors: ", err)
 				event.Ack()
 				return err
@@ -252,7 +255,7 @@ func Init(opts axon.Options) (axon.EventStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect with Pulsar with provided configuration. failed with error: %v", err)
 	}
-	return &pulsarStore{client: newClientWrapper(p), serviceName: name}, nil
+	return &pulsarStore{client: newClientWrapper(p), Marshaler: opts.Marshaler, serviceName: name}, nil
 }
 
 func InitTestEventStore(mockClient Client, serviceName string) (axon.EventStore, error) {
@@ -293,8 +296,10 @@ func (s *pulsarStore) Run(ctx context.Context, handlers ...axon.EventHandler) {
 }
 
 func byteToHex(b []byte) string {
-	var out struct{}
-	_ = json.Unmarshal(b, &out)
+	//var out struct{}
+	//if err := s.Unmarshal(b, &out); err != nil {
+	//	return "", errors.New("")
+	//}
 	return hex.EncodeToString(b)
 }
 
