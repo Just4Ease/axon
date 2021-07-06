@@ -222,7 +222,7 @@ func Init(opts options.Options, clusterId string, options ...stan.Option) (axon.
 	var optsList []stan.Option
 	optsList = append(optsList, stan.NatsConn(nc))
 	optsList = append(optsList, options...)
-	st, err := stan.Connect(clusterId, fmt.Sprintf("%s-%s", opts.ServiceName, utils.GenerateRandomString()), optsList...)
+	st, err := stan.Connect(nc.ConnectedServerId(), fmt.Sprintf("%s-%s", opts.ServiceName, utils.GenerateRandomString()), optsList...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to connect with NATS with the provided configuration. failed with error: %v", err)
 	}

@@ -28,6 +28,7 @@ type SubscriptionOptions struct {
 	subscriptionType *SubscriptionType
 	contentType      string
 	ctx              context.Context
+	maxReDelivery    int
 }
 
 func (s *SubscriptionOptions) SetContentType(contentType string) *SubscriptionOptions {

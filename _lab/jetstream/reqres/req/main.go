@@ -2,58 +2,62 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/Just4Ease/axon"
 	"github.com/Just4Ease/axon/codec/msgpack"
+	"github.com/Just4Ease/axon/messages"
 	"github.com/Just4Ease/axon/options"
-	"github.com/Just4Ease/axon/systems/liftbridged"
-	"log"
+	"github.com/Just4Ease/axon/systems/jetstream"
 )
 
 func main() {
-
 	name := flag.String("name", "", "help message for flagname")
 	flag.Parse()
 
-	ev, err := liftbridged.Init(options.Options{
+	ev, _ := jetstream.Init(options.Options{
 		//ContentType: "application/json",
 		ServiceName: *name,
 		Address:     "localhost:4222",
 		//Codecs: codec.De
 		Marshaler: msgpack.Marshaler{},
 	})
+
+	const endpoint = "callGreetings"
+
+	var in = struct {
+		FirstName string `json:"first_name"`
+	}{
+		FirstName: "Justice Nefe",
+	}
+
+	m := msgpack.Marshaler{}
+
+	data, err := m.Marshal(in)
+
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
-	handleSubEv := func() error {
-		const topic = "io.axon.test"
-		return ev.Subscribe(topic, func(event axon.Event) {
-			//fmt.Print(string(event.Data()), " Event Data")
-			defer event.Ack()
-			var pl struct {
-				FirstName string `json:"first_name"`
-			}
-			mg, err := event.Parse(&pl)
-			if err != nil {
-				fmt.Print(err, " Err parsing event into pl.")
-				return
-			}
-			PrettyJson(mg)
-		}, options.NewSubscriptionOptions().SetSubscriptionType(options.Shared))
+	msg := messages.NewMessage()
+	msg.WithContentType("application/msgpack")
+	msg.WithSource("fish-svc")
+	msg.WithSpecVersion("v2")
+	msg.WithSubject(endpoint)
+	msg.WithBody(data)
+
+	res, err := ev.Request(msg)
+	if err != nil {
+		fmt.Print(res)
 	}
 
-	ev.Run(context.Background(), handleSubEv)
+	PrettyJson(res)
 }
 
 const (
 	empty = ""
 	tab   = "\t"
 )
-
 
 func PrettyJson(data interface{}) {
 	buffer := new(bytes.Buffer)

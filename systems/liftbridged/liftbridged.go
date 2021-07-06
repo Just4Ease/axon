@@ -10,6 +10,7 @@ import (
 	"github.com/Just4Ease/axon/options"
 	lift "github.com/liftbridge-io/go-liftbridge/v2"
 	"log"
+	"time"
 )
 
 const Empty = ""
@@ -30,12 +31,8 @@ func (l lftStore) Publish(message *messages.Message) error {
 		return err
 	}
 
-	lMSG := lift.NewMessage(data, lift.AckPolicyAll())
-
-	if _, err := l.client.Publish(l.opts.Context, message.Subject, lMSG); err != nil {
-		return err
-	}
-	return nil
+	_, err = l.client.Publish(l.opts.Context, message.Subject, data, lift.Key([]byte(message.Id)))
+	return err
 }
 
 func (l lftStore) Subscribe(topic string, handler axon.SubscriptionHandler, opts ...*options.SubscriptionOptions) error {
@@ -50,24 +47,33 @@ func (l lftStore) Subscribe(topic string, handler axon.SubscriptionHandler, opts
 	so.SetContext(ctx)
 
 	go func(errChan chan error, msh codec.Marshaler, ctx context.Context) {
-
-		if err := l.client.CreateStream(ctx, topic, l.opts.ServiceName); err != nil {
-			errChan <- err
-			return
-		}
-
-		err := l.client.Subscribe(so.GetContext(), topic, func(m *lift.Message, err error) {
-			var msg messages.Message
-
-			if err = msh.Unmarshal(m.Value(), &msg); err != nil {
+		tpk := fmt.Sprintf("%s-%s", l.opts.ServiceName, topic)
+		if err := l.client.CreateStream(context.Background(), topic, tpk,
+			lift.Group(tpk),
+			lift.MaxReplication(),
+			lift.RetentionMaxAge(time.Second*86400), // 1 day.
+		); err != nil {
+			if err != lift.ErrStreamExists {
 				errChan <- err
 				return
 			}
+		}
+
+		err := l.client.Subscribe(so.GetContext(), tpk, func(m *lift.Message, err error) {
+			var msg messages.Message
+
+			if err := msh.Unmarshal(m.Value(), &msg); err != nil {
+				log.Printf("failed to unmarshall incoming payload into struct with the following errors: %v\n", err)
+				//errChan <- err
+				return
+			}
+
+			//lift.AckInbox()
 			ev := newEvent(m, msg)
 			go handler(ev)
 		},
-			lift.StartAtLatestReceived(),
 			lift.Resume(),
+			lift.StartAtLatestReceived(),
 			lift.ReadISRReplica(),
 		)
 
@@ -129,11 +135,6 @@ func (l lftStore) Request(message *messages.Message) (*messages.Message, error) 
 		return nil, err
 
 	case msg := <-responseMessage:
-		// Check if reply has an issue.
-		if msg.Type == messages.ErrorMessage {
-			return msg, errors.New(msg.Error)
-		}
-
 		return msg, nil
 	}
 }
@@ -209,13 +210,13 @@ func (l lftStore) Run(ctx context.Context, handlers ...axon.EventHandler) {
 }
 
 func Init(opts options.Options) (axon.EventStore, error) {
-	addrs := []string{"localhost:9292", "localhost:9293", "localhost:9294"}
+	addrs := []string{"localhost:9292"}
+	opts.EnsureDefaultMarshaling()
 	client, err := lift.Connect(addrs)
 	if err != nil {
 		return nil, err
 	}
 
 	l := &lftStore{client: client, opts: opts}
-
 	return l, nil
 }

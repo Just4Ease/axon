@@ -15,7 +15,7 @@ type EventHandler func() error
 
 func (f EventHandler) Run() {
 	if err := f(); err != nil {
-		log.Printf("creating a consumer returned error: %v. Retrying in 3 seconds", err)
+		log.Printf("creating a consumer returned error: %v. \nRetrying in 3 seconds", err)
 		time.Sleep(time.Second * 3)
 		f.Run()
 	}

@@ -2,11 +2,20 @@ package pulse
 
 import (
 	"github.com/Just4Ease/axon"
+	"github.com/Just4Ease/axon/messages"
 )
 
 type event struct {
 	raw      Message
 	consumer Consumer
+}
+
+func (e *event) NAck() {
+	e.consumer.Ack()
+}
+
+func (e *event) Parse(value interface{}) (*messages.Message, error) {
+	panic("implement me")
 }
 
 func NewEvent(message Message, consumer Consumer) axon.Event {
