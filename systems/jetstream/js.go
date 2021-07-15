@@ -52,14 +52,14 @@ func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, op
 		return err
 	}
 
-	var sub *nats.Subscription
-	errChan := make(chan error)
-	so := options.MergeSubscriptionOptions(opts...)
-
 	lb := fmt.Sprintf("%s-%s", s.opts.ServiceName, topic)
 	fmt.Printf("Load Balance Group: %s", lb)
 
 	durableName := strings.ReplaceAll(lb, ".", "-")
+
+	var sub *nats.Subscription
+	errChan := make(chan error)
+	so := options.MergeSubscriptionOptions(opts...)
 
 	go func(so *options.SubscriptionOptions, sub *nats.Subscription, errChan chan<- error) {
 		subType := so.GetSubscriptionType()
@@ -80,10 +80,11 @@ func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, op
 				nats.DeliverLast(),
 				nats.EnableFlowControl(),
 				nats.BindStream(s.opts.ServiceName),
-				//nats.AckExplicit(),
+				//nats.AckNone(),
 				nats.ManualAck(),
 				nats.ReplayOriginal(),
-				nats.MaxDeliver(5))
+				nats.MaxDeliver(5),
+			)
 		}
 
 		if subType == options.KeyShared {
