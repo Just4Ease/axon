@@ -9,11 +9,8 @@ import (
 	"github.com/Just4Ease/axon/messages"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/stan.go"
-	"github.com/oxtoacart/bpool"
 	mp "github.com/vmihailenco/msgpack/v5"
 )
-
-var bufferPool = bpool.NewSizedBufferPool(32, 1)
 
 type stanEvent struct {
 	m *stan.Msg

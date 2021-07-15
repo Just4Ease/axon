@@ -8,7 +8,6 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 	"log"
 	"sync"
-	"time"
 )
 
 func main() {
@@ -20,7 +19,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	const topic = "USERS.test"
+	const topic = "test"
 
 	data, err := msgpack.Marshal(struct {
 		FirstName string `json:"first_name"`
@@ -40,16 +39,14 @@ func main() {
 	msg.WithBody(data)
 
 	wg := &sync.WaitGroup{}
-	for i := 1; i < 20; i++ {
+	for i := 1; i < 10000; i++ {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup) {
 			defer wg.Done()
-	if err := ev.Publish(msg); err != nil {
-		fmt.Print(err, " Error publishing.\n")
-	}
+			if err := ev.Publish(msg); err != nil {
+				fmt.Print(err, " Error publishing.\n")
+			}
 		}(wg)
 	}
 	wg.Wait()
-
-	time.Sleep(time.Second * 2)
 }

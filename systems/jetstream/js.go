@@ -48,44 +48,24 @@ func (s *natsStore) Publish(message *messages.Message) error {
 }
 
 func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, opts ...*options.SubscriptionOptions) error {
-	//if err := s.registerSubjectOnStream(topic); err != nil {
-	//	return err
-	//}
+	if err := s.registerSubjectOnStream(topic); err != nil {
+		return err
+	}
 
 	var sub *nats.Subscription
 	errChan := make(chan error)
 	so := options.MergeSubscriptionOptions(opts...)
 
-	consumer, err := s.jsmClient.AddConsumer(s.opts.ServiceName, &nats.ConsumerConfig{
-		DeliverSubject:  topic,
-		//DeliverPolicy:   0,
-		//OptStartSeq:     0,
-		//OptStartTime:    nil,
-		//AckPolicy:       0,
-		//AckWait:         0,
-		//MaxDeliver:      0,
-		//FilterSubject:   "",
-		//ReplayPolicy:    0,
-		//RateLimit:       0,
-		//SampleFrequency: "",
-		//MaxWaiting:      0,
-		//MaxAckPending:   0,
-		FlowControl:    true,
-		//Heartbeat:       0,
-	})
-	if err != nil {
-		return err
-	}
+	lb := fmt.Sprintf("%s-%s", s.opts.ServiceName, topic)
+	fmt.Printf("Load Balance Group: %s", lb)
 
-
+	durableName := strings.ReplaceAll(lb, ".", "-")
 
 	go func(so *options.SubscriptionOptions, sub *nats.Subscription, errChan chan<- error) {
 		subType := so.GetSubscriptionType()
 		var err error
 		if subType == options.Shared {
-			lb := fmt.Sprintf("%s-%s", s.opts.ServiceName, topic)
-			fmt.Printf("Load Balance Group: %s", lb)
-			sub, err = s.jsmClient.QueueSubscribe(topic, lb, func(m *nats.Msg) {
+			_, err = s.jsmClient.QueueSubscribe(topic, durableName, func(m *nats.Msg) {
 				var msg messages.Message
 				if err = s.opts.Unmarshal(m.Data, &msg); err != nil {
 					errChan <- err
@@ -95,17 +75,19 @@ func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, op
 				event := newEvent(m, msg)
 				go handler(event)
 			},
-				//nats.Durable(s.opts.ServiceName),
+				nats.Durable(durableName),
+				//nats.
+				nats.DeliverLast(),
 				nats.EnableFlowControl(),
-				nats.BindStream(consumer.Name),
+				nats.BindStream(s.opts.ServiceName),
 				//nats.AckExplicit(),
-				//nats.ManualAck(),
-				//nats.ReplayOriginal(),
+				nats.ManualAck(),
+				nats.ReplayOriginal(),
 				nats.MaxDeliver(5))
 		}
 
 		if subType == options.KeyShared {
-			sub, err = s.jsmClient.Subscribe(topic, func(m *nats.Msg) {
+			_, err = s.jsmClient.Subscribe(topic, func(m *nats.Msg) {
 				var msg messages.Message
 				if err = s.opts.Unmarshal(m.Data, &msg); err != nil {
 					errChan <- err
@@ -114,17 +96,28 @@ func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, op
 
 				event := newEvent(m, msg)
 				go handler(event)
-			}, nats.Durable(s.opts.ServiceName), nats.ManualAck())
+			},
+				nats.Durable(durableName),
+				nats.DeliverLast(),
+				nats.EnableFlowControl(),
+				nats.BindStream(s.opts.ServiceName),
+				//nats.AckExplicit(),
+				//nats.ManualAck(),
+				nats.ReplayOriginal(),
+				nats.MaxDeliver(5))
+
 		}
 	}(so, sub, errChan)
 
-	defer sub.Drain()
+	//defer sub.Drain()
 	//defer cancel()
-	select {
-	case <-so.GetContext().Done():
-		return nil
-	case err := <-errChan:
-		return err
+	for {
+		select {
+		case <-so.GetContext().Done():
+			return nil
+		case err := <-errChan:
+			return err
+		}
 	}
 }
 
@@ -137,6 +130,10 @@ func (s *natsStore) Request(message *messages.Message) (*messages.Message, error
 	}
 
 	data, err := s.opts.Marshal(message)
+	if err != nil {
+		return nil, err
+	}
+
 	msg, err := nc.Request(message.Subject, data, time.Second)
 	if err != nil {
 		return nil, err
@@ -203,7 +200,6 @@ func (s *natsStore) GetServiceName() string {
 	return s.opts.ServiceName
 }
 
-
 func (s *natsStore) Run(ctx context.Context, handlers ...axon.EventHandler) {
 	for _, handler := range handlers {
 		go handler.Run()
@@ -253,7 +249,7 @@ func Init(opts options.Options, options ...nats.Option) (axon.EventStore, error)
 		}
 
 		if sinfo, err = js.AddStream(&nats.StreamConfig{
-			Name:      opts.ServiceName,
+			Name: opts.ServiceName,
 			//Retention: nats.InterestPolicy,
 			//NoAck: true,
 			NoAck: false,
@@ -289,11 +285,14 @@ func (s *natsStore) registerSubjectOnStream(subject string) error {
 	}
 
 	sinfo, err := s.jsmClient.UpdateStream(&nats.StreamConfig{
-		Name:      s.opts.ServiceName,
-		Subjects:  s.subjects,
-		NoAck:     false,
+		Name:     s.opts.ServiceName,
+		Subjects: s.subjects,
+		NoAck:    false,
 	})
-	fmt.Printf("Stream Config Err: %v \n", err)
-	fmt.Printf("Stream Config: %v \n", sinfo.Config)
-	return err // could be nil.
+
+	//fmt.Printf("Stream Config Err: %v \n", err)
+	if err == nil {
+		fmt.Printf("Stream Config: %v \n", sinfo.Config)
+	}
+	return nil // could be nil.
 }
