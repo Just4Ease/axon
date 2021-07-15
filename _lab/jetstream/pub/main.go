@@ -8,6 +8,7 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 	"log"
 	"sync"
+	"time"
 )
 
 func main() {
@@ -19,6 +20,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	start := time.Now()
 	const topic = "test"
 
 	data, err := msgpack.Marshal(struct {
@@ -39,7 +41,7 @@ func main() {
 	msg.WithBody(data)
 
 	wg := &sync.WaitGroup{}
-	for i := 1; i < 10000; i++ {
+	for i := 1; i < 20000; i++ {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup) {
 			defer wg.Done()
@@ -49,4 +51,9 @@ func main() {
 		}(wg)
 	}
 	wg.Wait()
+	end := time.Now()
+
+	diff := end.Sub(start)
+
+	fmt.Printf("Start: %s, End: %s, Diff: %s", start, end, diff)
 }

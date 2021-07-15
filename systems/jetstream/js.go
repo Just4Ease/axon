@@ -65,7 +65,7 @@ func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, op
 		subType := so.GetSubscriptionType()
 		var err error
 		if subType == options.Shared {
-			_, err = s.jsmClient.QueueSubscribe(topic, durableName, func(m *nats.Msg) {
+			sub, err = s.jsmClient.QueueSubscribe(topic, durableName, func(m *nats.Msg) {
 				var msg messages.Message
 				if err = s.opts.Unmarshal(m.Data, &msg); err != nil {
 					errChan <- err
@@ -76,10 +76,10 @@ func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, op
 				go handler(event)
 			},
 				nats.Durable(durableName),
-				//nats.
 				nats.DeliverLast(),
 				nats.EnableFlowControl(),
 				nats.BindStream(s.opts.ServiceName),
+				nats.MaxAckPending(20000000),
 				//nats.AckNone(),
 				nats.ManualAck(),
 				nats.ReplayOriginal(),
@@ -88,7 +88,7 @@ func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, op
 		}
 
 		if subType == options.KeyShared {
-			_, err = s.jsmClient.Subscribe(topic, func(m *nats.Msg) {
+			sub, err = s.jsmClient.Subscribe(topic, func(m *nats.Msg) {
 				var msg messages.Message
 				if err = s.opts.Unmarshal(m.Data, &msg); err != nil {
 					errChan <- err
@@ -103,8 +103,9 @@ func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, op
 				nats.EnableFlowControl(),
 				nats.BindStream(s.opts.ServiceName),
 				//nats.AckExplicit(),
-				//nats.ManualAck(),
+				nats.ManualAck(),
 				nats.ReplayOriginal(),
+				nats.MaxAckPending(20000000),
 				nats.MaxDeliver(5))
 
 		}
@@ -115,6 +116,10 @@ func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, op
 	for {
 		select {
 		case <-so.GetContext().Done():
+			err := sub.Drain()
+			if err != nil {
+				errChan <- err
+			}
 			return nil
 		case err := <-errChan:
 			return err
