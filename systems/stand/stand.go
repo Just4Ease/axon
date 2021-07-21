@@ -107,10 +107,9 @@ func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, op
 	defer sub.Close()
 	defer cancel()
 
-	select {
-	case <-so.GetContext().Done():
-		return err
-	}
+	<-so.GetContext().Done()
+	return err
+
 }
 
 func (s *natsStore) Request(message *messages.Message) (*messages.Message, error) {

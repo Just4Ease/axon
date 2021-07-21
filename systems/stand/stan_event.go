@@ -10,6 +10,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/stan.go"
 	mp "github.com/vmihailenco/msgpack/v5"
+	"log"
 )
 
 type stanEvent struct {
@@ -54,9 +55,7 @@ func (s stanEvent) Ack() {
 	_ = s.m.Ack()
 }
 
-func (s stanEvent) NAck() {
-	return
-}
+func (s stanEvent) NAck() {}
 
 func (s stanEvent) Data() []byte {
 	return s.m.Data
@@ -87,11 +86,15 @@ func (n natsEvent) Parse(value interface{}) (*messages.Message, error) {
 }
 
 func (n natsEvent) Ack() {
-	return
+	if err := n.m.Ack(); err != nil {
+		log.Printf("failed to NAck event with the following error: %v", err)
+	}
 }
 
 func (n natsEvent) NAck() {
-
+	if err := n.m.Nak(); err != nil {
+		log.Printf("failed to NAck event with the following error: %v", err)
+	}
 }
 
 func (n natsEvent) Data() []byte {

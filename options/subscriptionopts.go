@@ -58,10 +58,21 @@ func (s *SubscriptionOptions) GetSubscriptionType() SubscriptionType {
 	return *s.subscriptionType
 }
 
+
+func (s *SubscriptionOptions) SetMaxRedelivery(n int) *SubscriptionOptions {
+	s.maxReDelivery = n
+	return s
+}
+
+func (s *SubscriptionOptions) GetMaxRedelivery() int {
+	return s.maxReDelivery
+}
+
 func NewSubscriptionOptions() *SubscriptionOptions {
 	so := &SubscriptionOptions{}
 	so.SetContext(context.Background())
 	so.SetSubscriptionType(Shared)
+	so.SetMaxRedelivery(5)
 	return so
 }
 

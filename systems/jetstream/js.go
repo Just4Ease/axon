@@ -1,14 +1,15 @@
 package jetstream
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/Just4Ease/axon"
 	"github.com/Just4Ease/axon/codec"
 	"github.com/Just4Ease/axon/messages"
 	"github.com/Just4Ease/axon/options"
 	"github.com/nats-io/nats.go"
-	"github.com/pkg/errors"
 	"log"
 	"strings"
 	"sync"
@@ -19,11 +20,14 @@ const Empty = ""
 
 type natsStore struct {
 	codec.Codec
-	opts       options.Options
-	natsClient *nats.Conn
-	jsmClient  nats.JetStreamContext
-	mu         *sync.RWMutex
-	subjects   []string
+	opts               options.Options
+	natsClient         *nats.Conn
+	jsmClient          nats.JetStreamContext
+	mu                 *sync.RWMutex
+	subscriptions      map[string]*subscription
+	publishTopics      map[string]string
+	knownSubjectsCount int
+	serviceName        string
 }
 
 func (s *natsStore) newCodec(contentType string) (codec.NewCodec, error) {
@@ -31,100 +35,6 @@ func (s *natsStore) newCodec(contentType string) (codec.NewCodec, error) {
 		return c, nil
 	}
 	return nil, fmt.Errorf("unsupported Content-Type: %s", contentType)
-}
-
-func (s *natsStore) Publish(message *messages.Message) error {
-	if message == nil {
-		return errors.New("invalid message")
-	}
-
-	message.WithType(messages.EventMessage)
-	data, err := s.opts.Marshal(message)
-	if err != nil {
-		return err
-	}
-	_, err = s.jsmClient.Publish(message.Subject, data)
-	return err
-}
-
-func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, opts ...*options.SubscriptionOptions) error {
-	if err := s.registerSubjectOnStream(topic); err != nil {
-		return err
-	}
-
-	lb := fmt.Sprintf("%s-%s", s.opts.ServiceName, topic)
-	fmt.Printf("Load Balance Group: %s", lb)
-
-	durableName := strings.ReplaceAll(lb, ".", "-")
-
-	var sub *nats.Subscription
-	errChan := make(chan error)
-	so := options.MergeSubscriptionOptions(opts...)
-
-	go func(so *options.SubscriptionOptions, sub *nats.Subscription, errChan chan<- error) {
-		subType := so.GetSubscriptionType()
-		var err error
-		if subType == options.Shared {
-			sub, err = s.jsmClient.QueueSubscribe(topic, durableName, func(m *nats.Msg) {
-				var msg messages.Message
-				if err = s.opts.Unmarshal(m.Data, &msg); err != nil {
-					errChan <- err
-					return
-				}
-
-				event := newEvent(m, msg)
-				go handler(event)
-			},
-				nats.Durable(durableName),
-				nats.DeliverLast(),
-				nats.EnableFlowControl(),
-				nats.BindStream(s.opts.ServiceName),
-				nats.MaxAckPending(20000000),
-				//nats.AckNone(),
-				nats.ManualAck(),
-				nats.ReplayOriginal(),
-				nats.MaxDeliver(5),
-			)
-		}
-
-		if subType == options.KeyShared {
-			sub, err = s.jsmClient.Subscribe(topic, func(m *nats.Msg) {
-				var msg messages.Message
-				if err = s.opts.Unmarshal(m.Data, &msg); err != nil {
-					errChan <- err
-					return
-				}
-
-				event := newEvent(m, msg)
-				go handler(event)
-			},
-				nats.Durable(durableName),
-				nats.DeliverLast(),
-				nats.EnableFlowControl(),
-				nats.BindStream(s.opts.ServiceName),
-				//nats.AckExplicit(),
-				nats.ManualAck(),
-				nats.ReplayOriginal(),
-				nats.MaxAckPending(20000000),
-				nats.MaxDeliver(5))
-
-		}
-	}(so, sub, errChan)
-
-	//defer sub.Drain()
-	//defer cancel()
-	for {
-		select {
-		case <-so.GetContext().Done():
-			err := sub.Drain()
-			if err != nil {
-				errChan <- err
-			}
-			return nil
-		case err := <-errChan:
-			return err
-		}
-	}
 }
 
 func (s *natsStore) Request(message *messages.Message) (*messages.Message, error) {
@@ -157,7 +67,6 @@ func (s *natsStore) Request(message *messages.Message) (*messages.Message, error
 	return &mg, nil
 }
 
-//
 func (s *natsStore) Reply(topic string, handler axon.ReplyHandler) error {
 	errChan := make(chan error)
 	go func(errChan chan<- error) {
@@ -206,99 +115,143 @@ func (s *natsStore) GetServiceName() string {
 	return s.opts.ServiceName
 }
 
-func (s *natsStore) Run(ctx context.Context, handlers ...axon.EventHandler) {
-	for _, handler := range handlers {
-		go handler.Run()
-	}
-
-	<-ctx.Done()
-}
-
 func Init(opts options.Options, options ...nats.Option) (axon.EventStore, error) {
 
-	opts.EnsureDefaultMarshaling()
 	addr := strings.TrimSpace(opts.Address)
 	if addr == "" {
 		return nil, axon.ErrInvalidURL
 	}
 
-	if strings.TrimSpace(opts.ServiceName) == Empty {
+	name := strings.TrimSpace(opts.ServiceName)
+	if name == "" {
 		return nil, axon.ErrEmptyStoreName
 	}
+	opts.ServiceName = strings.TrimSpace(name)
+	options = append(options, nats.Name(name))
+	if opts.AuthenticationToken != "" {
+		options = append(options, nats.Token(opts.AuthenticationToken))
+	}
 
-	//if opts.Marshaler == nil {
-	//	opts.Marshaler = msgpack.Marshaler{}
-	//}
+	nc, js, err := connect(opts.ServiceName, opts.Address, options)
 
-	//if opts.AuthenticationToken != "" {
-	//	clientOptions.Authentication = pulsar.NewAuthenticationToken(opts.AuthenticationToken)
-	//}
-
-	log.Printf("Started event store with service name: %s \n", opts.ServiceName)
-
-	options = append(options, nats.Name(opts.ServiceName))
-
-	nc, err := nats.Connect(opts.Address, options...)
 	if err != nil {
 		return nil, err
+	}
+
+	return &natsStore{
+		opts:               opts,
+		jsmClient:          js,
+		natsClient:         nc,
+		serviceName:        name,
+		subscriptions:      make(map[string]*subscription),
+		publishTopics:      make(map[string]string),
+		knownSubjectsCount: 0,
+		mu:                 &sync.RWMutex{},
+	}, nil
+}
+
+func (s *natsStore) Run(ctx context.Context, handlers ...axon.EventHandler) {
+	for _, handler := range handlers {
+		handler.Run()
+	}
+
+	s.registerSubjectsOnStream()
+
+	for _, sub := range s.subscriptions {
+		go sub.runSubscriptionHandler()
+	}
+
+	<-ctx.Done()
+}
+
+func (s *natsStore) registerSubjectsOnStream() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var subjects []string
+
+	for _, v := range s.subscriptions {
+		subjects = append(subjects, v.topic)
+	}
+
+	for _, topic := range s.publishTopics {
+		subjects = append(subjects, topic)
+	}
+
+	subjects = append(subjects, s.opts.ServiceName)
+	// Do not bother altering the stream state if the values are the same.
+	if len(subjects) == s.knownSubjectsCount {
+		return
+	}
+
+	s.knownSubjectsCount = len(subjects)
+
+	if _, err := s.jsmClient.UpdateStream(&nats.StreamConfig{
+		Name:     s.opts.ServiceName,
+		Subjects: subjects,
+		NoAck:    false,
+	}); err != nil {
+		fmt.Printf("error updating stream: %s \n", err)
+		if err.Error() == "duplicate subjects detected" {
+			streamInfo, _ := s.jsmClient.StreamInfo(s.opts.ServiceName)
+			if len(streamInfo.Config.Subjects) != len(subjects) {
+				_ = s.jsmClient.DeleteStream(s.opts.ServiceName)
+				time.Sleep(1 * time.Second)
+				streamInfo, _ = s.jsmClient.AddStream(&nats.StreamConfig{
+					Name:     s.opts.ServiceName,
+					Subjects: subjects,
+					MaxAge:   time.Hour * 48,
+					NoAck:    false,
+				})
+				PrettyJson(streamInfo)
+			}
+		}
+	}
+}
+
+const (
+	empty = ""
+	tab   = "\t"
+)
+
+func PrettyJson(data interface{}) {
+	buffer := new(bytes.Buffer)
+	encoder := json.NewEncoder(buffer)
+	encoder.SetIndent(empty, tab)
+
+	err := encoder.Encode(data)
+	if err != nil {
+		return
+	}
+	fmt.Print(buffer.String())
+}
+
+func connect(sn, addr string, options []nats.Option) (*nats.Conn, nats.JetStreamContext, error) {
+	nc, err := nats.Connect(addr, options...)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	js, err := nc.JetStream()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	sinfo, err := js.StreamInfo(opts.ServiceName)
+	sinfo, err := js.StreamInfo(sn)
 	if err != nil {
 		if err.Error() != "stream not found" {
-			return nil, err
+			return nil, nil, err
 		}
 
 		if sinfo, err = js.AddStream(&nats.StreamConfig{
-			Name: opts.ServiceName,
-			//Retention: nats.InterestPolicy,
-			//NoAck: true,
-			NoAck: false,
+			Name:     sn,
+			Subjects: []string{sn},
+			NoAck:    false,
 		}); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	log.Print(sinfo.Config, " Stream Config \n")
-
-	return &natsStore{
-		jsmClient:  js,
-		natsClient: nc,
-		opts:       opts,
-		subjects:   make([]string, 0),
-		mu:         &sync.RWMutex{},
-	}, nil
-}
-
-func (s *natsStore) registerSubjectOnStream(subject string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, v := range s.subjects {
-		if v == subject {
-			return nil
-		}
-
-		s.subjects = append(s.subjects, subject)
-	}
-
-	if len(s.subjects) == 0 {
-		s.subjects = append(s.subjects, subject)
-	}
-
-	sinfo, err := s.jsmClient.UpdateStream(&nats.StreamConfig{
-		Name:     s.opts.ServiceName,
-		Subjects: s.subjects,
-		NoAck:    false,
-	})
-
-	//fmt.Printf("Stream Config Err: %v \n", err)
-	if err == nil {
-		fmt.Printf("Stream Config: %v \n", sinfo.Config)
-	}
-	return nil // could be nil.
+	fmt.Printf("JetStream Server Info: %v \n", sinfo)
+	return nc, js, nil
 }

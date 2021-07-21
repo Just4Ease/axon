@@ -52,9 +52,7 @@ func (s stanEvent) Ack() {
 	_ = s.m.Ack()
 }
 
-func (s stanEvent) NAck() {
-	return
-}
+func (s stanEvent) NAck() {}
 
 func (s stanEvent) Data() []byte {
 	return s.m.Data
