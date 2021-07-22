@@ -3,28 +3,26 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
-	"github.com/Just4Ease/axon/codec/msgpack"
-	"github.com/Just4Ease/axon/messages"
-	"github.com/Just4Ease/axon/options"
-	"github.com/Just4Ease/axon/systems/jetstream"
-	"github.com/pkg/errors"
+	"github.com/Just4Ease/axon/v2/codec/msgpack"
+	"github.com/Just4Ease/axon/v2/messages"
+	"github.com/Just4Ease/axon/v2/options"
+	"github.com/Just4Ease/axon/v2/systems/jetstream"
 )
 
 func main() {
-	name := flag.String("name", "", "help message for flagname")
-	flag.Parse()
+	//name := flag.String("name", "", "help message for flagname")
+	//flag.Parse()
 
 	ev, _ := jetstream.Init(options.Options{
 		//ContentType: "application/json",
-		ServiceName: *name,
+		ServiceName: "users",
 		Address:     "localhost:4222",
 		//Codecs: codec.De
 		Marshaler: msgpack.Marshaler{},
 	})
 
-	const endpoint = "callGreetings"
+	const endpoint = "users.UserService.webLogin"
 	//
 	//var in = struct {
 	//	FirstName string `json:"first_name"`
@@ -50,18 +48,22 @@ func main() {
 	err := ev.Reply(endpoint, func(mg *messages.Message) (*messages.Message, error) {
 		PrettyJson(mg)
 
-		var in struct {
-			FirstName string `json:"first_name"`
+		in := struct {
+			Token    string `json:"token"`
+			Password string `json:"password"`
+		}{
+			Token: "something light",
 		}
-		//msh := msgpack.Marshaler{}
-		//mg.Error = errors.New("Something bad happened").Error()
+		//
+		//
+		//PrettyJson(in)
+		msh := msgpack.Marshaler{}
 
-		//if err := msh.Unmarshal(mg.Body, &in); err != nil {
-		//	return nil, err
-		//}
+		data, _ := msh.Marshal(in)
 
-		PrettyJson(in)
-		return nil, errors.New("somethinng terrible happpend")
+
+		mg.WithBody(data)
+		return mg, nil
 	})
 
 	if err != nil {

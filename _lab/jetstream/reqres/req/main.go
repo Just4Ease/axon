@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/Just4Ease/axon/codec/msgpack"
-	"github.com/Just4Ease/axon/messages"
-	"github.com/Just4Ease/axon/options"
-	"github.com/Just4Ease/axon/systems/jetstream"
+	"github.com/Just4Ease/axon/v2/codec/msgpack"
+	"github.com/Just4Ease/axon/v2/messages"
+	"github.com/Just4Ease/axon/v2/options"
+	"github.com/Just4Ease/axon/v2/systems/jetstream"
 )
 
 func main() {

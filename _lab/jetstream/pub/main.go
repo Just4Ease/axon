@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/Just4Ease/axon/messages"
-	"github.com/Just4Ease/axon/options"
-	"github.com/Just4Ease/axon/systems/jetstream"
+	"github.com/Just4Ease/axon/v2/messages"
+	"github.com/Just4Ease/axon/v2/options"
+	"github.com/Just4Ease/axon/v2/systems/jetstream"
 	"github.com/vmihailenco/msgpack/v5"
 	"log"
 	"sync"

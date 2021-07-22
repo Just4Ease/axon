@@ -3,8 +3,6 @@ package msgpack
 import (
 	"bytes"
 	"github.com/vmihailenco/msgpack/v5"
-	jsonpb "google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 )
 
 type Marshaler struct{}
@@ -29,23 +27,14 @@ func (Marshaler) Marshal(v interface{}) ([]byte, error) {
 }
 
 func (Marshaler) Unmarshal(d []byte, v interface{}) error {
-	if pb, ok := v.(proto.Message); ok {
-		return jsonpb.Unmarshal(d, pb)
-	}
-
 	dec := msgpack.GetDecoder()
 
 	dec.SetCustomStructTag("json")
 
 	dec.Reset(bytes.NewReader(d))
+	defer msgpack.PutDecoder(dec)
 	err := dec.Decode(v)
-
-	msgpack.PutDecoder(dec)
-
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func (Marshaler) String() string {
