@@ -1,6 +1,6 @@
 package axon
 
-import "github.com/Just4Ease/axon/messages"
+import "github.com/Just4Ease/axon/v2/messages"
 
 type Event interface {
 	Ack()

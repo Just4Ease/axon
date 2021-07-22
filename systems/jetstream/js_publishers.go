@@ -2,7 +2,7 @@ package jetstream
 
 import (
 	"errors"
-	"github.com/Just4Ease/axon/messages"
+	"github.com/Just4Ease/axon/v2/messages"
 	"strings"
 )
 

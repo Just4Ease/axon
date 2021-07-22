@@ -1,7 +1,7 @@
 package bytes
 
 import (
-	"github.com/Just4Ease/axon/codec"
+	"github.com/Just4Ease/axon/v2/codec"
 )
 
 type Marshaler struct{}

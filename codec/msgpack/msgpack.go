@@ -2,7 +2,7 @@
 package msgpack
 
 import (
-	"github.com/Just4Ease/axon/codec"
+	"github.com/Just4Ease/axon/v2/codec"
 	"github.com/vmihailenco/msgpack/v5"
 	"io"
 )
@@ -17,11 +17,6 @@ func (c *Codec) Read(b interface{}) error {
 	if b == nil {
 		return nil
 	}
-	//if pb, ok := b.(proto.Message); ok {
-	//	return jsonpb.UnmarshalNext(c.Decoder, pb)
-	//}
-
-	//fmt.Print(c.Conn.Write())
 	return c.Decoder.Decode(b)
 }
 

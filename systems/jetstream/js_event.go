@@ -1,8 +1,8 @@
 package jetstream
 
 import (
-	"github.com/Just4Ease/axon"
-	"github.com/Just4Ease/axon/messages"
+	"github.com/Just4Ease/axon/v2"
+	"github.com/Just4Ease/axon/v2/messages"
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/common/log"
 )

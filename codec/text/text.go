@@ -3,7 +3,7 @@ package text
 
 import (
 	"fmt"
-	"github.com/Just4Ease/axon/codec"
+	"github.com/Just4Ease/axon/v2/codec"
 	"io"
 	"io/ioutil"
 )

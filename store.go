@@ -2,8 +2,8 @@ package axon
 
 import (
 	"context"
-	"github.com/Just4Ease/axon/messages"
-	"github.com/Just4Ease/axon/options"
+	"github.com/Just4Ease/axon/v2/messages"
+	"github.com/Just4Ease/axon/v2/options"
 	"github.com/pkg/errors"
 	"log"
 	"time"

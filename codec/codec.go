@@ -2,19 +2,12 @@
 package codec
 
 import (
-	"bytes"
 	"errors"
-	"github.com/oxtoacart/bpool"
-	"io"
-	"sync"
 )
 
 var (
 	ErrInvalidMessage = errors.New("invalid message")
 )
-
-// Takes in a connection/buffer and returns a new Codec
-type NewCodec func(io.ReadWriteCloser) Codec
 
 // Codec encodes/decodes various types of messages used within axon
 // ReadHeader and ReadBody are called in pairs to read requests/responses
@@ -42,34 +35,4 @@ type Marshaler interface {
 	Marshal(interface{}) ([]byte, error)
 	Unmarshal([]byte, interface{}) error
 	String() string
-}
-
-type ReadWriteCloser struct {
-	sync.RWMutex
-	wbuf *bytes.Buffer
-	rbuf *bytes.Buffer
-}
-
-func NewReadWriteCloser(bp *bpool.SizedBufferPool) *ReadWriteCloser {
-	return &ReadWriteCloser{
-		RWMutex: sync.RWMutex{},
-		wbuf:    bp.Get(),
-		rbuf:    bp.Get(),
-	}
-}
-
-func (rwc *ReadWriteCloser) Read(p []byte) (n int, err error) {
-	rwc.RLock()
-	defer rwc.RUnlock()
-	return rwc.rbuf.Read(p)
-}
-
-func (rwc *ReadWriteCloser) Write(p []byte) (n int, err error) {
-	rwc.Lock()
-	defer rwc.Unlock()
-	return rwc.wbuf.Write(p)
-}
-
-func (rwc *ReadWriteCloser) Close() error {
-	return nil
 }

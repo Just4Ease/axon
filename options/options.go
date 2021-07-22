@@ -2,8 +2,8 @@ package options
 
 import (
 	"context"
-	"github.com/Just4Ease/axon/codec"
-	"github.com/Just4Ease/axon/codec/msgpack"
+	"github.com/Just4Ease/axon/v2/codec"
+	"github.com/Just4Ease/axon/v2/codec/msgpack"
 	"github.com/prometheus/common/log"
 )
 
@@ -14,9 +14,6 @@ type Options struct {
 	CertContent         string
 	AuthenticationToken string
 	codec.Marshaler
-
-	// Plugged interfaces
-	Codecs map[string]codec.NewCodec
 
 	// Default Call Options
 	//CallOptions CallOptions

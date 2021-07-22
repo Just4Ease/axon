@@ -2,9 +2,9 @@ package jetstream
 
 import (
 	"fmt"
-	"github.com/Just4Ease/axon"
-	"github.com/Just4Ease/axon/messages"
-	"github.com/Just4Ease/axon/options"
+	"github.com/Just4Ease/axon/v2"
+	"github.com/Just4Ease/axon/v2/messages"
+	"github.com/Just4Ease/axon/v2/options"
 	"github.com/nats-io/nats.go"
 	"log"
 	"strings"
