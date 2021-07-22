@@ -2,74 +2,43 @@ package jetstream
 
 import (
 	"github.com/Just4Ease/axon"
-	"github.com/Just4Ease/axon/codec"
-	raw "github.com/Just4Ease/axon/codec/bytes"
-	"github.com/Just4Ease/axon/codec/json"
-	"github.com/Just4Ease/axon/codec/msgpack"
 	"github.com/Just4Ease/axon/messages"
 	"github.com/nats-io/nats.go"
-	mp "github.com/vmihailenco/msgpack/v5"
+	"github.com/prometheus/common/log"
 )
 
-type stanEvent struct {
-	m     *nats.Msg
-	msg   messages.Message
-	codec map[string]codec.NewCodec
+type jsEvent struct {
+	m   *nats.Msg
+	msg messages.Message
 }
 
-func (s stanEvent) Parse(value interface{}) (*messages.Message, error) {
-	//nc, ok := s.codec[s.msg.ContentType.String()]
-	//if !ok {
-	//	return nil, errors.New("unsupported payload codec")
-	//}
+func (j jsEvent) Message() *messages.Message {
+	return &j.msg
+}
 
-	//rwc := codec.NewReadWriteCloser(bufferPool)
-	////if _, err := rwc.Write(s.msg.Body); err != nil {
-	////	return nil, err
-	////}
-	//
-	//
-	//cc := nc(rwc)
-	//
-	//if err := cc.Write(s.msg.Body); err != nil {
-	//	return nil, err
-	//}
-	//
-	//fmt.Printf( " Collected message codec %s", cc)
-	//
-	//
-	//if err := cc.Read(value); err != nil {
-	//	return nil, err
-	//}
-	if err := mp.Unmarshal(s.msg.Body, value); err != nil {
-		return nil, err
+func (j jsEvent) Ack() {
+	if err := j.m.Ack(); err != nil {
+		log.Errorf("[axon] failed to NAck jetstream event with the following error: %v", err)
 	}
-
-	return &s.msg, nil
 }
 
-func (s stanEvent) Ack() {
-	_ = s.m.Ack()
+func (j jsEvent) NAck() {
+	if err := j.m.Nak(); err != nil {
+		log.Errorf("[axon] failed to NAck jetstream event with the following error: %v", err)
+	}
 }
 
-func (s stanEvent) NAck() {}
-
-func (s stanEvent) Data() []byte {
-	return s.m.Data
+func (j jsEvent) Data() []byte {
+	return j.m.Data
 }
 
-func (s stanEvent) Topic() string {
-	return s.m.Subject
+func (j jsEvent) Topic() string {
+	return j.m.Subject
 }
 
 func newEvent(m *nats.Msg, msg messages.Message) axon.Event {
-	return &stanEvent{
+	return &jsEvent{
 		m:   m,
 		msg: msg,
-		codec: map[string]codec.NewCodec{
-			"application/json":         json.NewCodec,
-			"application/msgpack":      msgpack.NewCodec,
-			"application/octet-stream": raw.NewCodec,
-		},
 	}
 }

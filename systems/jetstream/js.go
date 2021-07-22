@@ -6,11 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Just4Ease/axon"
-	"github.com/Just4Ease/axon/codec"
-	"github.com/Just4Ease/axon/messages"
 	"github.com/Just4Ease/axon/options"
 	"github.com/nats-io/nats.go"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +16,6 @@ import (
 const Empty = ""
 
 type natsStore struct {
-	codec.Codec
 	opts               options.Options
 	natsClient         *nats.Conn
 	jsmClient          nats.JetStreamContext
@@ -30,87 +26,6 @@ type natsStore struct {
 	serviceName        string
 }
 
-func (s *natsStore) newCodec(contentType string) (codec.NewCodec, error) {
-	if c, ok := s.opts.Codecs[contentType]; ok {
-		return c, nil
-	}
-	return nil, fmt.Errorf("unsupported Content-Type: %s", contentType)
-}
-
-func (s *natsStore) Request(message *messages.Message) (*messages.Message, error) {
-	nc := s.natsClient
-	message.WithType(messages.RequestMessage)
-	message.WithSource(s.opts.ServiceName)
-	if message.SpecVersion == Empty {
-		message.WithSpecVersion("default")
-	}
-
-	data, err := s.opts.Marshal(message)
-	if err != nil {
-		return nil, err
-	}
-
-	msg, err := nc.Request(message.Subject, data, time.Second)
-	if err != nil {
-		return nil, err
-	}
-
-	var mg messages.Message
-	if err := s.opts.Unmarshal(msg.Data, &mg); err != nil {
-		log.Print("failed to unmarshal reply event into reply struct with the following errors: ", err)
-		_ = msg.Nak()
-		return nil, err
-	}
-
-	_ = msg.Ack()
-
-	return &mg, nil
-}
-
-func (s *natsStore) Reply(topic string, handler axon.ReplyHandler) error {
-	errChan := make(chan error)
-	go func(errChan chan<- error) {
-		_, err := s.natsClient.QueueSubscribe(topic, s.opts.ServiceName, func(msg *nats.Msg) {
-			var mg messages.Message
-			if err := s.opts.Unmarshal(msg.Data, &mg); err != nil {
-				log.Print("failed to encode reply payload into []bytes with the following error: ", err)
-				errChan <- err
-				return
-			}
-
-			responseMessage, responseError := handler(&mg)
-			if responseError != nil {
-				log.Print("failed to encode reply payload into []bytes with the following error: ", responseError)
-				responseMessage = messages.NewMessage()
-				responseMessage.Error = responseError.Error()
-				responseMessage.WithType(messages.ErrorMessage)
-			} else {
-				responseMessage.WithType(messages.ResponseMessage)
-			}
-			responseMessage.WithSpecVersion(mg.SpecVersion)
-			responseMessage.WithSource(s.opts.ServiceName)
-			responseMessage.WithSubject(topic)
-
-			data, err := s.opts.Marshal(responseMessage)
-			if err != nil {
-				log.Print("failed to encode reply payload into []bytes with the following error: ", err)
-				errChan <- err
-				return
-			}
-
-			if err := msg.Respond(data); err != nil {
-				log.Print("failed to reply data to the incoming request with the following error: ", err)
-				errChan <- err
-				return
-			}
-		})
-		if err != nil {
-			errChan <- err
-		}
-	}(errChan)
-	return <-errChan
-}
-
 func (s *natsStore) GetServiceName() string {
 	return s.opts.ServiceName
 }
@@ -118,17 +33,17 @@ func (s *natsStore) GetServiceName() string {
 func Init(opts options.Options, options ...nats.Option) (axon.EventStore, error) {
 
 	addr := strings.TrimSpace(opts.Address)
-	if addr == "" {
+	if addr == Empty {
 		return nil, axon.ErrInvalidURL
 	}
 
 	name := strings.TrimSpace(opts.ServiceName)
-	if name == "" {
+	if name == Empty {
 		return nil, axon.ErrEmptyStoreName
 	}
 	opts.ServiceName = strings.TrimSpace(name)
 	options = append(options, nats.Name(name))
-	if opts.AuthenticationToken != "" {
+	if opts.AuthenticationToken != Empty {
 		options = append(options, nats.Token(opts.AuthenticationToken))
 	}
 

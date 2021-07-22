@@ -14,7 +14,7 @@ type ReplyHandler func(mg *messages.Message) (*messages.Message, error)
 type EventHandler func() error
 
 func (f EventHandler) Run() {
-	runLabel:
+runLabel:
 	if err := f(); err != nil {
 		log.Printf("creating a consumer returned error: %v. \nRetrying in 3 seconds", err)
 		time.Sleep(time.Second * 3)
@@ -30,7 +30,6 @@ var (
 )
 
 type EventStore interface {
-	//Stream()
 	Publish(message *messages.Message) error
 	Subscribe(topic string, handler SubscriptionHandler, opts ...*options.SubscriptionOptions) error
 	Request(message *messages.Message) (*messages.Message, error)

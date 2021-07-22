@@ -23,7 +23,8 @@ type subscription struct {
 func (s *subscription) mountSubscription() error {
 	errChan := make(chan error)
 
-	sub := new(nats.Subscription)
+	closeSub := make(chan bool)
+
 	cbHandler := func(m *nats.Msg) {
 		var msg messages.Message
 		if err := s.axonOpts.Unmarshal(m.Data, &msg); err != nil {
@@ -36,14 +37,15 @@ func (s *subscription) mountSubscription() error {
 	}
 	durableStore := strings.ReplaceAll(fmt.Sprintf("%s-%s", s.serviceName, s.topic), ".", "-")
 
-	//nats.MaxAckPending(20000000)
-	//nats.Durable(durableName)
-
-	//nats.AckNone(),
-	//nats.ManualAck(),
-
-	go func(s *subscription, sub *nats.Subscription, errChan chan<- error) {
+	go func(s *subscription, closeSub chan bool, errChan chan<- error) {
 		var err error
+		var sub *nats.Subscription
+		go func(sub *nats.Subscription, closeSub chan bool) {
+			<-closeSub
+			if err := sub.Drain(); err != nil {
+				log.Printf("failed to drain subscription with the following error before exitting: %v", err)
+			}
+		}(sub, closeSub)
 		switch s.subOptions.GetSubscriptionType() {
 		case options.Failover:
 
@@ -110,12 +112,14 @@ func (s *subscription) mountSubscription() error {
 				return
 			}
 		}
-	}(s, sub, errChan)
+
+	}(s, closeSub, errChan)
 
 	log.Printf("subscribed to event channel: %s \n", s.topic)
 	select {
 	case <-s.subOptions.GetContext().Done():
-		return sub.Drain()
+		closeSub <- true
+		return nil
 	case err := <-errChan:
 		return err
 	}
@@ -135,7 +139,7 @@ func (s *natsStore) addSubscriptionToSubscriptionPool(sub *subscription) error {
 	defer s.mu.Unlock()
 
 	if _, ok := s.subscriptions[sub.topic]; ok {
-		log.Fatalf("this topic %s already has a subscription registered on it", sub.topic)
+		log.Fatalf("there is already an existing subscription registered to this topic: %s", sub.topic)
 	}
 
 	s.subscriptions[sub.topic] = sub
