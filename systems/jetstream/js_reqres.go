@@ -51,7 +51,6 @@ func (s *natsStore) Reply(topic string, handler axon.ReplyHandler) error {
 
 			responseMessage, responseError := handler(&mg)
 			if responseError != nil {
-				log.Print("failed to encode reply payload into []bytes with the following error: ", responseError)
 				responseMessage = messages.NewMessage()
 				responseMessage.Error = responseError.Error()
 				responseMessage.WithType(messages.ErrorMessage)
