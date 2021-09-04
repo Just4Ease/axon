@@ -3,24 +3,20 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"github.com/Just4Ease/axon/v2/codec/msgpack"
-	"github.com/Just4Ease/axon/v2/messages"
 	"github.com/Just4Ease/axon/v2/options"
 	"github.com/Just4Ease/axon/v2/systems/jetstream"
+	"log"
 )
 
 func main() {
-	name := flag.String("name", "", "help message for flagname")
-	flag.Parse()
 
 	ev, _ := jetstream.Init(options.Options{
 		//ContentType: "application/json",
-		ServiceName: *name,
+		ServiceName: "fish-svc",
 		Address:     "localhost:4222",
 		//Codecs: codec.De
-		Marshaler: msgpack.Marshaler{},
 	})
 
 	const endpoint = "callGreetings"
@@ -39,16 +35,9 @@ func main() {
 		panic(err)
 	}
 
-	msg := messages.NewMessage()
-	msg.WithContentType("application/msgpack")
-	msg.WithSource("fish-svc")
-	msg.WithSpecVersion("v2")
-	msg.WithSubject(endpoint)
-	msg.WithBody(data)
-
-	res, err := ev.Request(msg)
+	res, err := ev.Request(endpoint, data, options.SetPubContentType("application/msgpack"), options.SetPubMsgVersion("v0.1.1"))
 	if err != nil {
-		fmt.Print(res)
+		log.Fatal(err)
 	}
 
 	PrettyJson(res)

@@ -2,28 +2,45 @@ package jetstream
 
 import (
 	"errors"
+	"fmt"
 	"github.com/Just4Ease/axon/v2/messages"
+	"github.com/Just4Ease/axon/v2/options"
 	"strings"
 )
 
-func (s *natsStore) Publish(message *messages.Message) error {
-	if message == nil {
-		return errors.New("invalid message")
+func (s *natsStore) Publish(topic string, data []byte, opts ...options.PublisherOption) error {
+	if strings.TrimSpace(topic) == empty {
+		return errors.New("invalid topic name")
 	}
 
-	message.WithType(messages.EventMessage)
-	data, err := s.opts.Marshal(message)
+	option, err := options.DefaultPublisherOptions(opts...)
 	if err != nil {
 		return err
 	}
 
-	if strings.TrimSpace(message.Subject) == empty {
-		return errors.New("invalid topic name")
+	message := messages.NewMessage()
+	message.WithSubject(topic)
+	message.WithBody(data)
+	message.WithType(messages.EventMessage)
+	message.WithSource(s.opts.ServiceName)
+	message.WithSpecVersion(option.SpecVersion())
+	message.WithContentType(messages.ContentType(option.ContentType()))
+	message.Header = option.Headers()
+
+	d, err := s.msh.Marshal(message)
+	if err != nil {
+		return err
 	}
 
-	s.mountAndRegisterPublishTopics(message.Subject)
+	subject := fmt.Sprintf("%s-%s", topic, option.SpecVersion())
 
-	_, err = s.jsmClient.Publish(message.Subject, data)
+	// Publish using NATS connection if JetStream is not enabled on nats-server.
+	if option.IsStreamingDisabled() || !s.jsmEnabled {
+		return s.nc.Publish(subject, d)
+	}
+
+	s.mountAndRegisterPublishTopics(subject)
+	_, err = s.jsc.Publish(subject, d)
 	return err
 }
 

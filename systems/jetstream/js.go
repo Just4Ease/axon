@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Just4Ease/axon/v2"
+	"github.com/Just4Ease/axon/v2/codec"
+	"github.com/Just4Ease/axon/v2/codec/msgpack"
 	"github.com/Just4Ease/axon/v2/options"
+	"github.com/gookit/color"
 	"github.com/nats-io/nats.go"
 	"strings"
 	"sync"
@@ -17,13 +20,40 @@ const Empty = ""
 
 type natsStore struct {
 	opts               options.Options
-	natsClient         *nats.Conn
-	jsmClient          nats.JetStreamContext
+	nc                 *nats.Conn
+	jsc                nats.JetStreamContext
 	mu                 *sync.RWMutex
 	subscriptions      map[string]*subscription
 	publishTopics      map[string]string
+	responders         map[string]*responder
 	knownSubjectsCount int
 	serviceName        string
+	jsmEnabled         bool
+	msh                codec.Marshaler
+}
+
+func (s *natsStore) Close() {
+
+	wg := &sync.WaitGroup{}
+
+	wg.Add(2)
+	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
+		for _, sub := range s.subscriptions {
+			sub.close()
+		}
+	}(wg)
+
+	go func(wg *sync.WaitGroup) {
+		defer wg.Done()
+		for _, responder := range s.responders {
+			responder.close()
+		}
+	}(wg)
+
+	fmt.Print("closed axon conn")
+	wg.Wait()
+	s.nc.Close()
 }
 
 func (s *natsStore) GetServiceName() string {
@@ -43,24 +73,43 @@ func Init(opts options.Options, options ...nats.Option) (axon.EventStore, error)
 	}
 	opts.ServiceName = strings.TrimSpace(name)
 	options = append(options, nats.Name(name))
+
 	if opts.AuthenticationToken != Empty {
 		options = append(options, nats.Token(opts.AuthenticationToken))
 	}
 
-	nc, js, err := connect(opts.ServiceName, opts.Address, options)
+	if opts.Username != Empty || opts.Password != Empty {
+		options = append(options, nats.UserInfo(opts.Username, opts.Password))
+	}
 
+	nc, js, err := connect(opts.ServiceName, opts.Address, options)
 	if err != nil {
+		if err == nats.ErrJetStreamNotEnabled {
+			goto ignoreError
+		}
 		return nil, err
+	}
+
+	color.Green.Print("🔥 NATS Connected 🚀\n")
+
+ignoreError:
+	jsmEnabled := false
+	if js != nil {
+		jsmEnabled = true
+		color.Green.Print("🔥 JetStream Connected 🚀\n")
 	}
 
 	return &natsStore{
 		opts:               opts,
-		jsmClient:          js,
-		natsClient:         nc,
+		jsc:                js,
+		nc:                 nc,
+		jsmEnabled:         jsmEnabled,
 		serviceName:        name,
 		subscriptions:      make(map[string]*subscription),
+		responders:         make(map[string]*responder),
 		publishTopics:      make(map[string]string),
 		knownSubjectsCount: 0,
+		msh:                msgpack.Marshaler{},
 		mu:                 &sync.RWMutex{},
 	}, nil
 }
@@ -101,18 +150,17 @@ func (s *natsStore) registerSubjectsOnStream() {
 
 	s.knownSubjectsCount = len(subjects)
 
-	if _, err := s.jsmClient.UpdateStream(&nats.StreamConfig{
+	if _, err := s.jsc.UpdateStream(&nats.StreamConfig{
 		Name:     s.opts.ServiceName,
 		Subjects: subjects,
 		NoAck:    false,
 	}); err != nil {
-		fmt.Printf("error updating stream: %s \n", err)
 		if err.Error() == "duplicate subjects detected" {
-			streamInfo, _ := s.jsmClient.StreamInfo(s.opts.ServiceName)
+			streamInfo, _ := s.jsc.StreamInfo(s.opts.ServiceName)
 			if len(streamInfo.Config.Subjects) != len(subjects) {
-				_ = s.jsmClient.DeleteStream(s.opts.ServiceName)
+				_ = s.jsc.DeleteStream(s.opts.ServiceName)
 				time.Sleep(1 * time.Second)
-				streamInfo, _ = s.jsmClient.AddStream(&nats.StreamConfig{
+				streamInfo, _ = s.jsc.AddStream(&nats.StreamConfig{
 					Name:     s.opts.ServiceName,
 					Subjects: subjects,
 					MaxAge:   time.Hour * 48,
@@ -149,16 +197,15 @@ func connect(sn, addr string, options []nats.Option) (*nats.Conn, nats.JetStream
 
 	js, err := nc.JetStream()
 	if err != nil {
-		return nil, nil, err
+		return nc, nil, err
 	}
 
-	sinfo, err := js.StreamInfo(sn)
-	if err != nil {
+	if _, err = js.StreamInfo(sn); err != nil {
 		if err.Error() != "stream not found" {
 			return nil, nil, err
 		}
 
-		if sinfo, err = js.AddStream(&nats.StreamConfig{
+		if _, err := js.AddStream(&nats.StreamConfig{
 			Name:     sn,
 			Subjects: []string{sn},
 			NoAck:    false,
@@ -167,6 +214,5 @@ func connect(sn, addr string, options []nats.Option) (*nats.Conn, nats.JetStream
 		}
 	}
 
-	fmt.Printf("JetStream Server Info: %v \n", sinfo)
 	return nc, js, nil
 }

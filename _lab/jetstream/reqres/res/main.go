@@ -8,6 +8,7 @@ import (
 	"github.com/Just4Ease/axon/v2/messages"
 	"github.com/Just4Ease/axon/v2/options"
 	"github.com/Just4Ease/axon/v2/systems/jetstream"
+	"time"
 )
 
 func main() {
@@ -19,56 +20,44 @@ func main() {
 		ServiceName: "users",
 		Address:     "localhost:4222",
 		//Codecs: codec.De
-		Marshaler: msgpack.Marshaler{},
 	})
 
-	const endpoint = "users.UserService.webLogin"
-	//
-	//var in = struct {
-	//	FirstName string `json:"first_name"`
-	//}{
-	//	FirstName: "Justice Nefe",
-	//}
+	const endpoint = "callGreetings"
+	go func() {
 
-	//m := msgpack.Marshaler{}
-	//
-	//data, err := m.Marshal(in)
-	//
-	//if err != nil {
-	//	panic(err)
-	//}
+		err := ev.Reply(endpoint, func(mg *messages.Message) (*messages.Message, error) {
+			PrettyJson(mg)
 
-	//msg := messages.NewMessage()
-	//msg.WithContentType(messages.ContentType("application/msgpack"))
-	//msg.WithSource("fish-svc")
-	//msg.WithSpecVersion("v2")
-	//msg.WithSubject(endpoint)
-	//msg.WithBody(data)
+			in := struct {
+				Token    string `json:"token"`
+				Password string `json:"password"`
+			}{
+				Token: "something light",
+			}
+			//
+			//
+			//PrettyJson(in)
+			msh := msgpack.Marshaler{}
 
-	err := ev.Reply(endpoint, func(mg *messages.Message) (*messages.Message, error) {
-		PrettyJson(mg)
+			data, _ := msh.Marshal(in)
 
-		in := struct {
-			Token    string `json:"token"`
-			Password string `json:"password"`
-		}{
-			Token: "something light",
+			mg.WithBody(data)
+			return mg, nil
+		}, options.SetSubContentType("application/msgpack"), options.SetExpectedMessageSpecVersion("v0.1.1"))
+
+		if err != nil {
+			fmt.Print(err)
 		}
-		//
-		//
-		//PrettyJson(in)
-		msh := msgpack.Marshaler{}
+		<-make(chan bool)
+	}()
 
-		data, _ := msh.Marshal(in)
-
-
-		mg.WithBody(data)
-		return mg, nil
+	timer := time.AfterFunc(time.Second*10, func() {
+		ev.Close()
+		fmt.Print("Closed")
 	})
 
-	if err != nil {
-		fmt.Print(err)
-	}
+	<-timer.C
+
 }
 
 const (

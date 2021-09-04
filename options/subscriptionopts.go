@@ -1,6 +1,10 @@
 package options
 
-import "context"
+import (
+	"context"
+	"errors"
+	"strings"
+)
 
 // SubscriptionType of subscription supported by most messaging systems. ( Pulsar,
 type SubscriptionType int
@@ -24,76 +28,121 @@ const (
 	KeyShared
 )
 
+func (t SubscriptionType) IsValid() bool {
+	switch t {
+	case Exclusive, Shared, Failover, KeyShared:
+		return true
+	default:
+		return false
+	}
+}
+
+func (t SubscriptionType) String() string {
+	return []string{"Exclusive", "Shared", "Failover", "KeyShared"}[t]
+}
+
 type SubscriptionOptions struct {
-	subscriptionType *SubscriptionType
-	contentType      string
-	ctx              context.Context
-	maxReDelivery    int
+	subscriptionType   SubscriptionType
+	disableStreaming   bool
+	contentType        string
+	ctx                context.Context
+	messageSpecVersion string
+	maxReDelivery      int
 }
 
-func (s *SubscriptionOptions) SetContentType(contentType string) *SubscriptionOptions {
-	s.contentType = contentType
-	return s
+type SubscriptionOption func(o *SubscriptionOptions) error
+
+func SetSubContentType(contentType string) SubscriptionOption {
+	return func(o *SubscriptionOptions) error {
+		o.contentType = contentType
+		return nil
+	}
 }
 
-func (s *SubscriptionOptions) SetContext(ctx context.Context) *SubscriptionOptions {
-	s.ctx = ctx
-	return s
-}
-
-func (s *SubscriptionOptions) GetContext() context.Context {
-	return s.ctx
-}
-
-func (s *SubscriptionOptions) GetContentType() string {
-	return s.contentType
-}
-
-func (s *SubscriptionOptions) SetSubscriptionType(t SubscriptionType) *SubscriptionOptions {
-	s.subscriptionType = &t
-	return s
-}
-
-func (s *SubscriptionOptions) GetSubscriptionType() SubscriptionType {
-	return *s.subscriptionType
-}
-
-
-func (s *SubscriptionOptions) SetMaxRedelivery(n int) *SubscriptionOptions {
-	s.maxReDelivery = n
-	return s
-}
-
-func (s *SubscriptionOptions) GetMaxRedelivery() int {
-	return s.maxReDelivery
-}
-
-func NewSubscriptionOptions() *SubscriptionOptions {
-	so := &SubscriptionOptions{}
-	so.SetContext(context.Background())
-	so.SetSubscriptionType(Shared)
-	so.SetMaxRedelivery(5)
-	return so
-}
-
-// MergeSubscriptionOptions combines the given SubscriptionOptions instances into a single
-// SubscriptionOptions in a last-one-wins fashion.
-func MergeSubscriptionOptions(opts ...*SubscriptionOptions) *SubscriptionOptions {
-	so := NewSubscriptionOptions()
-	for _, opt := range opts {
-		if opt == nil {
-			continue
+func SetExpectedMessageSpecVersion(version string) SubscriptionOption {
+	return func(o *SubscriptionOptions) error {
+		if strings.TrimSpace(version) == "" {
+			return errors.New("invalid message version")
 		}
-		if opt.subscriptionType != nil {
-			so.subscriptionType = opt.subscriptionType
+		o.messageSpecVersion = version
+		return nil
+	}
+}
+
+func SetSubContext(ctx context.Context) SubscriptionOption {
+	return func(o *SubscriptionOptions) error {
+		if ctx == nil {
+			return errors.New("invalid context")
 		}
-		if opt.contentType != "" {
-			so.contentType = opt.contentType
+
+		o.ctx = ctx
+		return nil
+	}
+}
+
+func SetSubType(t SubscriptionType) SubscriptionOption {
+	return func(o *SubscriptionOptions) error {
+		if !t.IsValid() {
+			return errors.New("invalid subscription type")
 		}
-		if opt.ctx != nil {
-			so.ctx = opt.ctx
+
+		o.subscriptionType = t
+		return nil
+	}
+}
+
+func SetSubMaxRedelivery(n int) SubscriptionOption {
+	return func(o *SubscriptionOptions) error {
+		o.maxReDelivery = n
+		return nil
+	}
+}
+
+func DisableSubStreaming() SubscriptionOption {
+	return func(o *SubscriptionOptions) error {
+		o.disableStreaming = true
+		return nil
+	}
+}
+
+func DefaultSubOptions(opts ...SubscriptionOption) (*SubscriptionOptions, error) {
+	s := &SubscriptionOptions{
+		ctx:                context.Background(),
+		subscriptionType:   Shared,
+		maxReDelivery:      5,
+		disableStreaming:   false,
+		messageSpecVersion: "default",
+		contentType:        "application/json",
+	}
+	for _, o := range opts {
+		if err := o(s); err != nil {
+			return nil, err
 		}
 	}
 
-	return so
+	return s, nil
+}
+
+func (s SubscriptionOptions) Context() context.Context {
+	return s.ctx
+}
+
+func (s SubscriptionOptions) ContentType() string {
+	return s.contentType
+}
+
+func (s SubscriptionOptions) SubscriptionType() SubscriptionType {
+	return s.subscriptionType
+}
+
+func (s SubscriptionOptions) MaxRedelivery() int {
+	return s.maxReDelivery
+}
+
+func (s SubscriptionOptions) IsStreamingDisabled() bool {
+	return s.disableStreaming
+}
+
+func (s SubscriptionOptions) ExpectedSpecVersion() string {
+	return s.messageSpecVersion
 }

@@ -30,10 +30,11 @@ var (
 )
 
 type EventStore interface {
-	Publish(message *messages.Message) error
-	Subscribe(topic string, handler SubscriptionHandler, opts ...*options.SubscriptionOptions) error
-	Request(message *messages.Message) (*messages.Message, error)
-	Reply(topic string, handler ReplyHandler) error
+	Publish(topic string, data []byte, opts ...options.PublisherOption) error
+	Subscribe(topic string, handler SubscriptionHandler, opts ...options.SubscriptionOption) error
+	Request(topic string, params []byte, opts ...options.PublisherOption) (*messages.Message, error)
+	Reply(topic string, handler ReplyHandler, opts ...options.SubscriptionOption) error
 	GetServiceName() string
 	Run(ctx context.Context, handlers ...EventHandler)
+	Close()
 }

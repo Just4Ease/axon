@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/Just4Ease/axon/v2/messages"
 	"github.com/Just4Ease/axon/v2/options"
 	"github.com/Just4Ease/axon/v2/systems/jetstream"
 	"github.com/vmihailenco/msgpack/v5"
@@ -33,19 +32,12 @@ func main() {
 		panic(err)
 	}
 
-	msg := messages.NewMessage()
-	msg.WithContentType("application/msgpack")
-	msg.WithSource("fish-svc")
-	msg.WithSpecVersion("v1")
-	msg.WithSubject(topic)
-	msg.WithBody(data)
-
 	wg := &sync.WaitGroup{}
-	for i := 1; i < 20000; i++ {
+	for i := 0; i < 20000; i++ {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup) {
 			defer wg.Done()
-			if err := ev.Publish(msg); err != nil {
+			if err := ev.Publish(topic, data, options.SetPubContentType("application/msgpack")); err != nil {
 				fmt.Print(err, " Error publishing.\n")
 			}
 		}(wg)

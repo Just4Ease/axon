@@ -16,18 +16,17 @@ type subscription struct {
 	cb          axon.SubscriptionHandler
 	axonOpts    *options.Options
 	subOptions  *options.SubscriptionOptions
-	jsmClient   nats.JetStreamContext
+	store       *natsStore
+	closeSignal chan bool
 	serviceName string
 }
 
 func (s *subscription) mountSubscription() error {
 	errChan := make(chan error)
 
-	closeSub := make(chan bool)
-
 	cbHandler := func(m *nats.Msg) {
 		var msg messages.Message
-		if err := s.axonOpts.Unmarshal(m.Data, &msg); err != nil {
+		if err := s.store.msh.Unmarshal(m.Data, &msg); err != nil {
 			errChan <- err
 			return
 		}
@@ -35,28 +34,56 @@ func (s *subscription) mountSubscription() error {
 		event := newEvent(m, msg)
 		go s.cb(event)
 	}
-	durableStore := strings.ReplaceAll(fmt.Sprintf("%s-%s", s.serviceName, s.topic), ".", "-")
 
-	go func(s *subscription, closeSub chan bool, errChan chan<- error) {
-		var err error
-		var sub *nats.Subscription
-		go func(sub *nats.Subscription, closeSub chan bool) {
-			<-closeSub
+	topic := fmt.Sprintf("%s-%s", s.topic, s.subOptions.ExpectedSpecVersion())
+
+	durableStore := strings.ReplaceAll(fmt.Sprintf("%s-%s", s.serviceName, topic), ".", "-")
+
+	// Without JetStream, use just nats.
+	if s.subOptions.IsStreamingDisabled() || !s.store.jsmEnabled {
+		go func(s *subscription, errChan chan<- error) {
+			var err error
+			var sub *nats.Subscription
+			switch s.subOptions.SubscriptionType() {
+			case options.Shared:
+				sub, err = s.store.nc.QueueSubscribe(topic, durableStore, cbHandler)
+				if err != nil {
+					errChan <- err
+					return
+				}
+			case options.KeyShared:
+				if sub, err = s.store.nc.Subscribe(topic, cbHandler); err != nil {
+					errChan <- err
+					return
+				}
+			default:
+				log.Fatal("only Shared and KeyShared subscription can work if jetstream is not enabled on nats-server")
+			}
+
+			<-s.closeSignal
 			if err := sub.Drain(); err != nil {
 				log.Printf("failed to drain subscription with the following error before exitting: %v", err)
+				errChan <- err
 			}
-		}(sub, closeSub)
-		switch s.subOptions.GetSubscriptionType() {
+		}(s, errChan)
+		goto holdWatcher
+	}
+
+	// With JetStream use JetStream
+	go func(s *subscription, errChan chan<- error) {
+		var err error
+		var sub *nats.Subscription
+		switch s.subOptions.SubscriptionType() {
 		case options.Failover:
 
 			break
 		case options.Exclusive:
-			consumer, err := s.jsmClient.AddConsumer(s.serviceName, &nats.ConsumerConfig{
+			consumer, err := s.store.jsc.AddConsumer(s.serviceName, &nats.ConsumerConfig{
 				Durable: durableStore,
 				//DeliverSubject: nats.NewInbox(),
 				DeliverPolicy: nats.DeliverLastPolicy,
 				AckPolicy:     nats.AckExplicitPolicy,
-				MaxDeliver:    s.subOptions.GetMaxRedelivery(),
+				MaxDeliver:    s.subOptions.MaxRedelivery(),
 				ReplayPolicy:  nats.ReplayOriginalPolicy,
 				MaxAckPending: 20000,
 				FlowControl:   false,
@@ -69,20 +96,20 @@ func (s *subscription) mountSubscription() error {
 				return
 			}
 
-			if sub, err = s.jsmClient.QueueSubscribe(consumer.Name, durableStore, cbHandler, nats.Durable(durableStore),
+			if sub, err = s.store.jsc.QueueSubscribe(consumer.Name, durableStore, cbHandler, nats.Durable(durableStore),
 				nats.DeliverLast(),
 				nats.EnableFlowControl(),
 				nats.BindStream(s.serviceName),
 				nats.MaxAckPending(20000000),
 				nats.ManualAck(),
 				nats.ReplayOriginal(),
-				nats.MaxDeliver(s.subOptions.GetMaxRedelivery())); err != nil {
+				nats.MaxDeliver(s.subOptions.MaxRedelivery())); err != nil {
 				errChan <- err
 				return
 			}
 
 		case options.Shared:
-			sub, err = s.jsmClient.QueueSubscribe(s.topic,
+			sub, err = s.store.jsc.QueueSubscribe(topic,
 				durableStore,
 				cbHandler,
 				nats.Durable(durableStore),
@@ -92,13 +119,13 @@ func (s *subscription) mountSubscription() error {
 				nats.MaxAckPending(20000000),
 				nats.ManualAck(),
 				nats.ReplayOriginal(),
-				nats.MaxDeliver(s.subOptions.GetMaxRedelivery()))
+				nats.MaxDeliver(s.subOptions.MaxRedelivery()))
 			if err != nil {
 				errChan <- err
 				return
 			}
 		case options.KeyShared:
-			if sub, err = s.jsmClient.Subscribe(s.topic,
+			if sub, err = s.store.jsc.Subscribe(topic,
 				cbHandler,
 				nats.Durable(durableStore),
 				nats.DeliverLast(),
@@ -107,18 +134,25 @@ func (s *subscription) mountSubscription() error {
 				nats.MaxAckPending(20000000),
 				nats.ManualAck(),
 				nats.ReplayOriginal(),
-				nats.MaxDeliver(s.subOptions.GetMaxRedelivery())); err != nil {
+				nats.MaxDeliver(s.subOptions.MaxRedelivery())); err != nil {
 				errChan <- err
 				return
 			}
 		}
 
-	}(s, closeSub, errChan)
+		<-s.closeSignal
+		if err := sub.Drain(); err != nil {
+			log.Printf("failed to drain subscription with the following error before exitting: %v", err)
+			errChan <- err
+		}
+	}(s, errChan)
 
 	log.Printf("subscribed to event channel: %s \n", s.topic)
+
+holdWatcher:
 	select {
-	case <-s.subOptions.GetContext().Done():
-		closeSub <- true
+	case <-s.subOptions.Context().Done():
+		s.closeSignal <- true
 		return nil
 	case err := <-errChan:
 		return err
@@ -138,23 +172,34 @@ func (s *natsStore) addSubscriptionToSubscriptionPool(sub *subscription) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.subscriptions[sub.topic]; ok {
+	topic := fmt.Sprintf("%s-%s", sub.topic, sub.subOptions.ExpectedSpecVersion())
+
+	if _, ok := s.subscriptions[topic]; ok {
 		log.Fatalf("there is already an existing subscription registered to this topic: %s", sub.topic)
 	}
 
-	s.subscriptions[sub.topic] = sub
+	s.subscriptions[topic] = sub
 	return nil
 }
 
-func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, opts ...*options.SubscriptionOptions) error {
-	so := options.MergeSubscriptionOptions(opts...)
+func (s *natsStore) Subscribe(topic string, handler axon.SubscriptionHandler, opts ...options.SubscriptionOption) error {
+	subOptions, err := options.DefaultSubOptions(opts...)
+	if err != nil {
+		return err
+	}
+
 	sub := &subscription{
 		topic:       topic,
 		cb:          handler,
 		axonOpts:    &s.opts,
-		subOptions:  so,
-		jsmClient:   s.jsmClient,
+		subOptions:  subOptions,
+		store:       s,
 		serviceName: s.opts.ServiceName,
 	}
+
 	return s.addSubscriptionToSubscriptionPool(sub)
+}
+
+func (s *subscription) close() {
+	s.closeSignal <- true
 }
