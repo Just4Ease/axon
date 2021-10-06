@@ -51,7 +51,6 @@ func (s *natsStore) Close() {
 		}
 	}(wg)
 
-	fmt.Print("closed axon conn")
 	wg.Wait()
 	s.nc.Close()
 }
@@ -89,14 +88,14 @@ func Init(opts options.Options, options ...nats.Option) (axon.EventStore, error)
 		}
 		return nil, err
 	}
-
-	color.Green.Print("🔥 NATS Connected 🚀\n")
-
 ignoreError:
+	color.Green.Print("🔥 NATS connected 🚀\n")
 	jsmEnabled := false
 	if js != nil {
 		jsmEnabled = true
-		color.Green.Print("🔥 JetStream Connected 🚀\n")
+		color.Green.Print("🔥 JetStream connected 🚀\n")
+	} else {
+		color.Green.Print("🌧  JetStream  not connected 💔\n")
 	}
 
 	return &natsStore{
@@ -133,9 +132,8 @@ func (s *natsStore) registerSubjectsOnStream() {
 	defer s.mu.Unlock()
 
 	var subjects []string
-
-	for _, v := range s.subscriptions {
-		subjects = append(subjects, v.topic)
+	for topic := range s.subscriptions {
+		subjects = append(subjects, topic)
 	}
 
 	for _, topic := range s.publishTopics {
@@ -147,8 +145,11 @@ func (s *natsStore) registerSubjectsOnStream() {
 	if len(subjects) == s.knownSubjectsCount {
 		return
 	}
-
 	s.knownSubjectsCount = len(subjects)
+
+	if !s.jsmEnabled {
+		return
+	}
 
 	if _, err := s.jsc.UpdateStream(&nats.StreamConfig{
 		Name:     s.opts.ServiceName,
@@ -201,7 +202,11 @@ func connect(sn, addr string, options []nats.Option) (*nats.Conn, nats.JetStream
 	}
 
 	if _, err = js.StreamInfo(sn); err != nil {
-		if err.Error() != "stream not found" {
+		if strings.Contains(err.Error(), "no responders available for request") {
+			return nc, nil, nats.ErrJetStreamNotEnabled
+		}
+
+		if err != nats.ErrStreamNotFound {
 			return nil, nil, err
 		}
 

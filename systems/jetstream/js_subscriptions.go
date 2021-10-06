@@ -5,6 +5,7 @@ import (
 	"github.com/Just4Ease/axon/v2"
 	"github.com/Just4Ease/axon/v2/messages"
 	"github.com/Just4Ease/axon/v2/options"
+	"github.com/gookit/color"
 	"github.com/nats-io/nats.go"
 	"log"
 	"strings"
@@ -114,7 +115,6 @@ func (s *subscription) mountSubscription() error {
 				cbHandler,
 				nats.Durable(durableStore),
 				nats.DeliverLast(),
-				nats.EnableFlowControl(),
 				nats.BindStream(s.serviceName),
 				nats.MaxAckPending(20000000),
 				nats.ManualAck(),
@@ -147,9 +147,8 @@ func (s *subscription) mountSubscription() error {
 		}
 	}(s, errChan)
 
-	log.Printf("subscribed to event channel: %s \n", s.topic)
-
 holdWatcher:
+	color.Green.Printf("⚡️ Subscription: %s (%s) 🤘🏼 \n", s.topic, s.subOptions.ExpectedSpecVersion())
 	select {
 	case <-s.subOptions.Context().Done():
 		s.closeSignal <- true

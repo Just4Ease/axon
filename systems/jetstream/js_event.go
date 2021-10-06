@@ -4,7 +4,7 @@ import (
 	"github.com/Just4Ease/axon/v2"
 	"github.com/Just4Ease/axon/v2/messages"
 	"github.com/nats-io/nats.go"
-	"github.com/prometheus/common/log"
+	"log"
 )
 
 type jsEvent struct {
@@ -18,13 +18,13 @@ func (j jsEvent) Message() *messages.Message {
 
 func (j jsEvent) Ack() {
 	if err := j.m.Ack(); err != nil {
-		log.Errorf("[axon] failed to NAck jetstream event with the following error: %v", err)
+		log.Printf("[axon] failed to NAck jetstream event with the following error: %v", err)
 	}
 }
 
 func (j jsEvent) NAck() {
 	if err := j.m.Nak(); err != nil {
-		log.Errorf("[axon] failed to NAck jetstream event with the following error: %v", err)
+		log.Printf("[axon] failed to NAck jetstream event with the following error: %v", err)
 	}
 }
 
