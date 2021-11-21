@@ -1,28 +1,25 @@
 # axon
- 
-## How to use 
+
+## How to use
 
 ```go
 package main
 
 import (
- "axon"
- "axon/pulse"
- "log"
- "time"
+	"github.com/Just4Ease/axon/v2/options"
+	"github.com/Just4Ease/axon/v2/systems/jetstream"
+	"log"
+	"time"
 )
 
 func main() {
+
+	var topic = "test-topic" // for random topic name.
+	var store, _ = jetstream.Init(options.Options{
+		ServiceName: "test-event-store",
+		Address:     "nats://localhost:4222",
+	})
 	
-    var topic = "test-topic" // for random topic name.
-    var store, _ = pulse.Init(axon.Options{
-        ServiceName: "test-event-store",
-	    Address: "pulsar://localhost:6650",
-    })
-	
-	if err := store.Publish(topic, []byte("Hello World!")); err != nil {
-		log.Fatalf("Could not publish message to %s", topic)
-	}
 
 	timer := time.AfterFunc(3*time.Second, func() {
 		if err := store.Subscribe(topic, func(event axon.Event) {
@@ -46,9 +43,12 @@ func main() {
 
 	defer timer.Stop()
 
+	if err := store.Publish(topic, []byte("Hello World!")); err != nil {
+		log.Fatalf("Could not publish message to %s", topic)
+	}
+
 }
 ```
-
 
 ```shell script
 # For tests
